@@ -45,10 +45,14 @@ void NonCoopGT::setSysParams( const Eigen::MatrixXd& A,
   A_ = A;
   B_ = B;
   C_ = C;
-    
-  ROS_DEBUG_STREAM("A:\n"<<A_);
-  ROS_DEBUG_STREAM("B:\n"<<B_);
-  ROS_DEBUG_STREAM("C:\n"<<C_);
+  
+  std::cout<<"A:\n"<<A_<<std::endl;
+  std::cout<<"B:\n"<<B_<<std::endl;
+  std::cout<<"C:\n"<<C_<<std::endl;
+
+  // ROS_DEBUG_STREAM("A:\n"<<A_);
+  // ROS_DEBUG_STREAM("B:\n"<<B_);
+  // ROS_DEBUG_STREAM("C:\n"<<C_);
     
   sys_params_set_ = true;
 }
@@ -59,7 +63,8 @@ bool NonCoopGT::getSysParams(Eigen::MatrixXd& A,
 {
   if(!sys_params_set_)
   {
-    ROS_ERROR("system params not yet set. return");
+    std::cerr << "System params not yet set. return" << std::endl;
+    // ROS_ERROR("system params not yet set. return");
     return false;
   }
   
@@ -102,7 +107,8 @@ bool NonCoopGT::getCostMatrices(Eigen::MatrixXd& Q1,
 {
   if (!cost_params_set_)
   {
-    ROS_ERROR("Cost params not yet set");
+    std::cerr << "Cost parameters not yet set" << std::endl;
+    // ROS_ERROR("Cost params not yet set");
     return false;
   }
   
@@ -118,7 +124,8 @@ bool NonCoopGT::setCurrentState(const Eigen::VectorXd& x)
 {  
   if (x.size() != 2*n_dofs_)
   {
-    ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
+    std::cerr << "State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_<<std::endl;
+    // ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
     return false;
   }
 
@@ -142,7 +149,8 @@ void NonCoopGT::computeNonCooperativeGains()
 void NonCoopGT::getNonCooperativeGains(Eigen::MatrixXd& K1, Eigen::MatrixXd& K2)
 {
   if(!gains_set_)
-    ROS_WARN_STREAM("gains have not yet been computed ! ");
+    std::cout<<"gains have not yet been computed ! "<<std::endl;
+    // ROS_WARN_STREAM("gains have not yet been computed ! ");
   K1 = K_1_;
   K2 = K_2_;
 }
@@ -151,7 +159,8 @@ bool NonCoopGT::setPosReference(const Eigen::VectorXd& ref_1, const Eigen::Vecto
 {
   if(ref_1.size()<n_dofs_ || ref_2.size()<n_dofs_)
   {
-    ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
+    std::cerr << "reference vectors have wrong length. Expected: "<< n_dofs_ <<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() << std::endl;
+    // ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
     return false;
   }
   
@@ -170,7 +179,8 @@ bool NonCoopGT::setReference(const Eigen::VectorXd& ref_1, const Eigen::VectorXd
 {
   if(ref_1.size()<2*n_dofs_ || ref_2.size()<2*n_dofs_)
   {
-    ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<2*n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
+    std::cerr << "reference vectors have wrong length. Expected: "<<2*n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() << std::endl;
+    // ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<2*n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
     return false;
   }
   
@@ -256,7 +266,7 @@ void NonCoopGT::solveNashEquilibrium( const Eigen::MatrixXd &A,
   double err_2 = 1;
   double toll = 0.00001;
 
-  while (err_1>toll && err_2>toll)
+  while (err_1>toll || err_2>toll)
   {    
     Eigen::MatrixXd A1 = A - S2*P2;
     Eigen::MatrixXd A2 = A - S1*P1;
@@ -279,9 +289,11 @@ void NonCoopGT::solveNashEquilibrium( const Eigen::MatrixXd &A,
 Eigen::VectorXd  NonCoopGT::computeControlInputs()
 {
   if (!state_ok_)
-    ROS_WARN_STREAM("State is not updated. computing gains on the last state received: " << X_.transpose());
+    std::cout<<"State is not updated. computing gains on the last state received: " << X_.transpose() << std::endl;
+    // ROS_WARN_STREAM("State is not updated. computing gains on the last state received: " << X_.transpose());
   if (!reference_ok_)
-    ROS_WARN_STREAM("Reference is not updated. computing gains on the last reference received. ");
+    std::cout<<"Reference is not updated. computing gains on the last reference received: " << ref_1_.transpose() << std::endl;
+    // ROS_WARN_STREAM("Reference is not updated. computing gains on the last reference received. ");
   
   state_ok_     = false;
   reference_ok_ = false;
@@ -307,21 +319,25 @@ Eigen::VectorXd NonCoopGT::step(const Eigen::VectorXd& x, const Eigen::VectorXd&
 {
   if (x.size() != 2*n_dofs_)
   {
-    ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
+    std::cerr << "State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_<<std::endl;
+    // ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
   }
   if (!sys_params_set_)
   {
-    ROS_ERROR_STREAM("System parameters not set. use setC2DSysParams or setSysParams to set the parameters before !");
+    std::cerr << "System parameters not set. use setC2DSysParams or setSysParams to set the parameters before !" << std::endl;
+    // ROS_ERROR_STREAM("System parameters not set. use setC2DSysParams or setSysParams to set the parameters before !");
   }
   
   if(ref_1.size()!=ref_2.size())
-    ROS_ERROR_STREAM("references are not the same size ! ");
+    std::cerr << "references are not the same size ! "<<ref_1.size()<<" and "<<ref_2.size()<<std::endl;
+    // ROS_ERROR_STREAM("references are not the same size ! ");
   if(ref_1.size()==n_dofs_ && ref_2.size()==n_dofs_)
     setPosReference(ref_1,ref_2);
   else if(ref_1.size()==2*n_dofs_ && ref_2.size()==2*n_dofs_)
     setReference(ref_1,ref_2);
   else
-    ROS_ERROR("references have an incorrect length .");
+    std::cerr << "references have an incorrect length ."<<std::endl;
+    // ROS_ERROR("references have an incorrect length .");
   
   Eigen::VectorXd u1,u2,u; u1.resize(n_dofs_);u2.resize(n_dofs_);u.resize(2*n_dofs_);
   u = computeControlInputs();

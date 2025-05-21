@@ -1,7 +1,8 @@
 #pragma once
 
-#include <ros/ros.h>
 #include <eigen3/Eigen/Dense>
+#include <iostream>
+#include <string>
 
 class NonCoopGT
 {
