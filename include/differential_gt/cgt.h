@@ -1,7 +1,7 @@
-#pragma once
-
-#include <ros/ros.h>
+#pragma once //? Maybe modify this with #ifndef and #define
 #include <eigen3/Eigen/Dense>
+#include <iostream>
+#include <string>
 
 class CoopGT
 {
