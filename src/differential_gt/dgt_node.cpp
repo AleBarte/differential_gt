@@ -75,9 +75,9 @@ int main(int argc, char **argv)
           0,0.0001;
      Qrh <<0.0001,0,
           0,0;
-     Eigen::MatrixXd Rh; Rh.resize(1,1); Rh<< .0005;
+     Eigen::MatrixXd Rh; Rh.resize(1,1); Rh<< .0001;
      Eigen::MatrixXd Rr; Rr.resize(1,1); Rr<< .0001;
-     double alpha = 0.8;
+     double alpha = 0.9;
 
      cgt.setAlpha(alpha);
 
@@ -85,6 +85,11 @@ int main(int argc, char **argv)
 
      Eigen::MatrixXd Qh; Qh.resize(2,2);
      Eigen::MatrixXd Qr; Qr.resize(2,2);
+
+
+     std::cout<<"Qh: \n"<<Qh<<std::endl;
+     std::cout<<"Qr: \n"<<Qr<<std::endl;
+
      cgt.getCostMatrices(Qh,Qr,Rh,Rr);
 
      ncgt.setCostsParams(Qh,Qr,Rh,Rr);
@@ -110,7 +115,7 @@ int main(int argc, char **argv)
      cgt.setPosReference(rh,rr);
      ncgt.setPosReference(rh,rr);  
 
-     for (int i = 0;i<10;i++)  
+     for (int i = 0;i<ref_h.size();i++)  
      {
     
           rh = ref_h.segment(i,1);
@@ -118,7 +123,7 @@ int main(int argc, char **argv)
 
           Eigen::VectorXd cgt_state = cgt.getCurrentState();
           cgt.step(cgt_state ,rh,rr);
-          std::cout<<"cgt_state: "<<cgt_state.transpose()<<std::endl;
+          // std::cout<<"cgt_state: "<<cgt_state.transpose()<<std::endl;
           // ROS_INFO_STREAM("cgt_state : "<<cgt_state .transpose());
 
           Eigen::VectorXd ncgt_state = ncgt.getCurrentState();

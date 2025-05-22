@@ -5,3 +5,19 @@
 *.kdev*
 *.idea
 *.idea*
+
+# Ignore build artifacts
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+*.out
+*.a
+*.lib
+
+# Ignore compiled binary output
+dgt_node
+main
+build/
+bin/
