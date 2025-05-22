@@ -1,4 +1,4 @@
-#include <differential_gt/cgt.h>
+#include "../include/differential_gt/cgt.hpp"
 
 //*------------------------------------------------------------*//
 //*----------------------- Constructor ------------------------*//

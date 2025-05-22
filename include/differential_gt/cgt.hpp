@@ -1,4 +1,5 @@
-#pragma once //? Maybe modify this with #ifndef and #define
+#ifndef DIFF_GT_CGT_HPP
+#define DIFF_GT_CGT_HPP
 #include <eigen3/Eigen/Dense>
 #include <iostream>
 #include <string>
@@ -108,4 +109,5 @@ void solveNashEquilibrium( const Eigen::MatrixXd &A,
   double dt_;
   double alpha_;
 };
+#endif
 

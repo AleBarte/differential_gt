@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DIFF_GT_NCGT_HPP
+#define DIFF_GT_NCGT_HPP
 
 #include <eigen3/Eigen/Dense>
 #include <iostream>
@@ -103,4 +104,6 @@ void solveNashEquilibrium( const Eigen::MatrixXd &A,
   int n_dofs_;
   double dt_;
 };
+
+#endif
 

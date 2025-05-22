@@ -1,4 +1,4 @@
-#include <differential_gt/ncgt.h>
+#include "../include/differential_gt/ncgt.hpp"
 
 
 NonCoopGT::NonCoopGT(const int& n_dofs, const double& dt): n_dofs_(n_dofs), dt_(dt)
