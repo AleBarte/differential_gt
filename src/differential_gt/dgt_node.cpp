@@ -1,6 +1,8 @@
 
 #include "../include/differential_gt/ncgt.hpp"
 #include "../include/differential_gt/cgt.hpp"
+#include "../include/differential_gt/arbitration.hpp"
+#include <math.h>
 
 std::vector<double> range(double min, double max, double dt) {
     std::vector<double> range;
@@ -26,7 +28,7 @@ int main(int argc, char **argv)
      for (int i = 0;i<time.size();i++)
      {
           ref_h(i) = 1;//std::sin(time[i]);
-          ref_r(i) = 0.5;//*std::sin(time[i]);
+          ref_r(i) = -1;//*std::sin(time[i]);
      }
   
   
@@ -77,7 +79,11 @@ int main(int argc, char **argv)
           0,0;
      Eigen::MatrixXd Rh; Rh.resize(1,1); Rh<< .0001;
      Eigen::MatrixXd Rr; Rr.resize(1,1); Rr<< .0001;
-     double alpha = 0.9;
+     double alpha = 0.5;
+
+     Arbitration arbitration;
+     double cos_theta;
+     int decision;
 
      cgt.setAlpha(alpha);
 
@@ -115,20 +121,34 @@ int main(int argc, char **argv)
      cgt.setPosReference(rh,rr);
      ncgt.setPosReference(rh,rr);  
 
-     for (int i = 0;i<ref_h.size();i++)  
+     for (int i = 0;i<20;i++)  
      {
     
           rh = ref_h.segment(i,1);
           rr = ref_r.segment(i,1);
 
           Eigen::VectorXd cgt_state = cgt.getCurrentState();
+          Eigen::VectorXd u_cgt = cgt.computeControlInputs();
+          Eigen::VectorXd u1_cgt = u_cgt.segment(0,n_dofs);
+          Eigen::VectorXd u2_cgt = u_cgt.segment(n_dofs,n_dofs);
+          arbitration.CosineSimilarity(u1_cgt, u2_cgt, cos_theta, decision);
+          std::cout<<"cos_theta: "<<cos_theta<<std::endl;
+          std::cout<<"decision: "<<decision<<std::endl;
+
+
           cgt.step(cgt_state ,rh,rr);
-          // std::cout<<"cgt_state: "<<cgt_state.transpose()<<std::endl;
+          std::cout<<"cgt_state: "<<cgt_state.transpose()<<std::endl;
           // ROS_INFO_STREAM("cgt_state : "<<cgt_state .transpose());
 
           Eigen::VectorXd ncgt_state = ncgt.getCurrentState();
+          Eigen::VectorXd u_ncgt = ncgt.computeControlInputs();
+          Eigen::VectorXd u1_ncgt = u_ncgt.segment(0,n_dofs);
+          Eigen::VectorXd u2_ncgt = u_ncgt.segment(n_dofs,n_dofs);
+          arbitration.CosineSimilarity(u1_ncgt, u2_ncgt, cos_theta, decision);
+          // std::cout<<"cos_theta: "<<cos_theta<<std::endl;
+          // std::cout<<"decision: "<< decision<<std::endl;
           ncgt.step(ncgt_state ,rh,rr);
-          std::cout<<"ncgt_state: "<<ncgt_state.transpose()<<std::endl;
+          // std::cout<<"ncgt_state: "<<ncgt_state.transpose()<<std::endl;
           // ROS_INFO_STREAM("ncgt_state : "<<ncgt_state .transpose());
      }
      

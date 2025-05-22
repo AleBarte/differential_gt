@@ -70,11 +70,6 @@ void CoopGT::setSysParams( const Eigen::MatrixXd& A,
   std::cout << "A:\n" << this->A_ << std::endl;
   std::cout << "B:\n" << this->B_ << std::endl;
   std::cout << "C:\n" << this->C_ << std::endl;
-
-
-  // ROS_DEBUG_STREAM("A:\n"<<A_);
-  // ROS_DEBUG_STREAM("B:\n"<<B_);
-  // ROS_DEBUG_STREAM("C:\n"<<C_);
     
   this->sys_params_set_ = true;
 }
@@ -89,7 +84,6 @@ bool CoopGT::getSysParams(Eigen::MatrixXd& A,
   {
 
     std::cerr << "System parameters not set. return." << std::endl;
-    // ROS_ERROR("system params not yet set. return");
     return false;
   }
   
@@ -131,7 +125,6 @@ bool CoopGT::getCostMatrices(Eigen::MatrixXd& Q1,
   if (!this->cost_params_set_)
   {
     std::cerr << "Cost parameters not yet set" << std::endl;
-    // ROS_ERROR("Cost params not yet set");
     return false;
   }
   
@@ -151,7 +144,6 @@ bool CoopGT::setAlpha(const double& alpha)
   {
     //TODO: Introduce a better logic for this
     std::cerr << "weight alpha must be 0 < alpha < 1 . Current value of alpha: "<<alpha << std::endl;
-    // ROS_ERROR_STREAM("weight alpha must be 0 < alpha < 1 . Current value of alpha: "<<alpha);
     return false;
   }
   this->alpha_ = alpha;
@@ -166,7 +158,6 @@ bool CoopGT::setCurrentState(const Eigen::VectorXd& x)
   if (x.size() != 2 * this->n_dofs_)
   {
     std::cerr << "State size is not correct. got: "<< x.size()<<", required: "<< 2 * this->n_dofs_<<std::endl;
-    // ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
     return false;
   }
 
@@ -182,7 +173,6 @@ bool CoopGT::updateGTMatrices()
   if(!this->alpha_set_)
   {
     std::cerr << "Parameter alpha not yet set!" << std::endl;
-    // ROS_ERROR("parameter alpha not yet set! ");
     return false;
   }
     
@@ -211,13 +201,12 @@ void CoopGT::updateGTMatrices(const double& alpha )
 Eigen::VectorXd CoopGT::getCurrentState(){return this->X_;};
 
 //-----------------------------------------------------------
-// Compute Cooperative Gains
+// Compute Cooperative Gains (input alpha)
 void CoopGT::computeCooperativeGains(const double& alpha)
 {
   this->setAlpha(alpha);
   if(!this->updateGTMatrices())
     std::cerr << "Something wrong in updating matrices" << std::endl;
-    // ROS_ERROR("comething wrong in updating matrices");
   this->computeCooperativeGains(this->Q_gt_, this->R_gt_);
 }
 
@@ -225,7 +214,7 @@ void CoopGT::computeCooperativeGains(const double& alpha)
 // Compute Cooperative Gains (No Inputs)
 void CoopGT::computeCooperativeGains()
 {
-  computeCooperativeGains(this->Q_gt_, this->R_gt_);
+  this->computeCooperativeGains(this->Q_gt_, this->R_gt_);
 }
 
 //-----------------------------------------------------------
@@ -236,12 +225,10 @@ void CoopGT::computeCooperativeGains(const Eigen::MatrixXd& Q, const Eigen::Matr
   B_gt << this->B_, this->B_;
   Eigen::MatrixXd P_cgt;
   Eigen::MatrixXd kk = this->solveRiccati(this->A_, B_gt, Q, R, P_cgt);
-//   K_cgt_ = kk.diagonal().asDiagonal();
   this->K_cgt_.topLeftCorner    (this->n_dofs_, this->n_dofs_) = kk.topLeftCorner(this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
   this->K_cgt_.topRightCorner   (this->n_dofs_, this->n_dofs_) = kk.topRightCorner(this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
   this->K_cgt_.bottomRightCorner(this->n_dofs_, this->n_dofs_) = kk.bottomRightCorner(this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
   this->K_cgt_.bottomLeftCorner (this->n_dofs_, this->n_dofs_) = kk.bottomLeftCorner (this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
-  // ROS_DEBUG_STREAM("K_cgt\n: "<<K_cgt_);
   std::cout << "K_cgt:\n" << this->K_cgt_ << std::endl;
   this->gains_set_ = true;
 }
@@ -263,7 +250,6 @@ bool CoopGT::setPosReference(const Eigen::VectorXd& ref_1, const Eigen::VectorXd
   if(ref_1.size() < this->n_dofs_ || ref_2.size() < this->n_dofs_)
   {
     std::cerr << "reference vectors have wrong length. Expected: "<< this->n_dofs_ <<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() << std::endl;
-    // ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
     return false;
   }
   
@@ -285,7 +271,6 @@ bool CoopGT::setReference(const Eigen::VectorXd& ref_1, const Eigen::VectorXd& r
   if(ref_1.size()< 2 * this->n_dofs_ || ref_2.size()< 2 * this->n_dofs_)
   {
     std::cerr << "reference vectors have wrong length. Expected: "<<2 * this->n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() << std::endl;
-    // ROS_ERROR_STREAM("reference vectors have wrong length. Expected: "<<2*n_dofs_<<", got ref_1: "<<ref_1.size()<<" and ref_2: "<<ref_2.size() );
     return false;
   }
   
@@ -310,12 +295,10 @@ Eigen::VectorXd CoopGT::computeControlInputs()
   if (!this->state_ok_)
   {
     std::cerr << "State is not updated. Computing gains on the last state received: " << this->X_.transpose() << std::endl;
-    // ROS_WARN_STREAM("State is not updated. computing gains on the last state received: " << X_.transpose());
   }
   if (!this->reference_ok_)
   {
     std::cerr << "Reference is not updated. Computing gains on the last reference received: " << this->reference_.transpose() << std::endl;
-    // ROS_WARN_STREAM("Reference is not updated. computing gains on the last reference received: " << reference_.transpose());
   }
   
   this->state_ok_     = false;
@@ -343,26 +326,22 @@ Eigen::VectorXd CoopGT::step(const Eigen::VectorXd& x, const Eigen::VectorXd& re
   if (x.size() != 2 * this->n_dofs_)
   {
     std::cerr << "State size is not correct. got: "<< x.size()<<", required: "<< 2 * this->n_dofs_<<std::endl;
-    // ROS_ERROR_STREAM("State size is not correct. got: "<< x.size()<<", required: "<< 2*n_dofs_);
   }
   if (!this->sys_params_set_)
   {
     std::cerr << "System parameters not set. use setC2DSysParams or setSysParams to set the parameters before !" << std::endl;
-    // ROS_ERROR_STREAM("System parameters not set. use setC2DSysParams or setSysParams to set the parameters before !");
   }
 
   //? The function setC2DSysParams is not defined in the class
   
   if(ref_1.size()!=ref_2.size())
     std::cerr << "references are not the same size ! " << std::endl;
-    // ROS_ERROR_STREAM("references are not the same size ! ");
   if(ref_1.size() == this->n_dofs_ && ref_2.size() == this->n_dofs_)
     this->setPosReference(ref_1,ref_2);
   else if(ref_1.size() == 2 * this->n_dofs_ && ref_2.size() == 2 * this->n_dofs_)
     this->setReference(ref_1,ref_2);
   else
     std::cerr << "references have an incorrect length ."<<std::endl;
-    // ROS_ERROR("references have an incorrect length .");
   
   Eigen::VectorXd u = this->computeControlInputs();
   

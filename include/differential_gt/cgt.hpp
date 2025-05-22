@@ -47,6 +47,7 @@ public:
   Eigen::VectorXd step(const Eigen::VectorXd& ref_1, const Eigen::VectorXd& ref_2);
   Eigen::VectorXd getCurrentState();
   
+  
   void computeCooperativeGains(const double& alpha);
   void computeCooperativeGains();
   void computeCooperativeGains(const Eigen::MatrixXd& Q, const Eigen::MatrixXd& R);
