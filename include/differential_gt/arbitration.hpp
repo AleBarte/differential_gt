@@ -5,6 +5,7 @@
 #include <string>
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
+#include <cmath>
 
 
 
@@ -14,6 +15,7 @@ public:
     // Constructors
     Arbitration();
     Arbitration(double cosine_similarity_threshold, double epsilon);
+    Arbitration(double cosine_similarity_threshold);
     
     // Method to perform I Level arbitration
     void CosineSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision);

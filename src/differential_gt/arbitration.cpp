@@ -8,7 +8,15 @@ Arbitration::Arbitration(double cosine_similarity_threshold, double epsilon) :
     cosine_similarity_threshold_(cosine_similarity_threshold),
     epsilon_(epsilon) // Initialize the threshold and epsilon
 {
-    // Constructor implementation (For now, it's empty)
+    if (this->cosine_similarity_threshold_ < 0.0)
+    {
+        std::cerr << "Cosine similarity threshold must be non-negative. Setting to default value of 0.5." << std::endl;
+        this->cosine_similarity_threshold_ = 0.5; // Default value
+    } else if (std::abs(this->cosine_similarity_threshold_) > 1.0)
+    {
+        std::cerr << "Cosine similarity threshold must be between -1 and 1. Setting to default value of 0.5." << std::endl;
+        this->cosine_similarity_threshold_ = 0.5; // Default value
+    }
 }
 
 Arbitration::Arbitration() :
@@ -18,6 +26,10 @@ Arbitration::Arbitration() :
 
 }
 
+Arbitration::Arbitration(double cosine_similarity_threshold)
+    : cosine_similarity_threshold_(cosine_similarity_threshold),
+      epsilon_(1e-5) // Default small value to avoid division by zero
+{}
 
 //*---------------------------*//
 //*----- Public Methods ------*//

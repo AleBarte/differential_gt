@@ -29,8 +29,8 @@ int main(int argc, char **argv)
      ref_r.setZero();
   
      for (int i = 0;i<time.size();i++)
-     {
-          ref_h.col(i) << 1, 0;//std::sin(time[i]);
+     {    
+          ref_h.col(i) << 1, 0.5;//std::sin(time[i]);
           ref_r.col(i) << 1, 0;//std::sin(time[i]);
      }
 
@@ -65,13 +65,6 @@ int main(int argc, char **argv)
 
      Bc.block(n_dofs, 0, n_dofs, n_dofs) = M.inverse();
      
-     // Ac << 0, 1,
-     //       -k/m, -c/m;
-
-     // Bc << 0,
-     //       1/m;
-
-     // Cc << 1, 0;
 
      NonCoopGT ncgt(n_dofs,dt);
      ncgt.setSysParams(Ac,Bc);
@@ -84,20 +77,6 @@ int main(int argc, char **argv)
      cgt.setCurrentState(X);
      ncgt.setCurrentState(X);
 
-     // Eigen::MatrixXd Qhh; Qhh.resize(2 * n_dofs, 2 * n_dofs); 
-     // Eigen::MatrixXd Qhr; Qhr.resize(2 * n_dofs, 2 * n_dofs);
-     // Eigen::MatrixXd Qrr; Qrr.resize(2 * n_dofs, 2 * n_dofs);
-     // Eigen::MatrixXd Qrh; Qrh.resize(2 * n_dofs, 2 * n_dofs); 
-
-     // Qhh <<1,0,
-     //      0,0.0001;
-     // Qhr <<0,0,
-     //      0,0.0001;
-
-     // Qrr <<1,0,
-     //      0,0.0001;
-     // Qrh <<0.0001,0,
-     //      0,0;
 
      Eigen::MatrixXd Qhh = Eigen::MatrixXd::Zero(2*n_dofs,2*n_dofs);
      Eigen::MatrixXd Qhr = Eigen::MatrixXd::Zero(2*n_dofs,2*n_dofs);
@@ -121,16 +100,11 @@ int main(int argc, char **argv)
      std::cout<<"Qrh: \n"<<Qrh<<std::endl;
 
 
-
-
-     // Eigen::MatrixXd Rh; Rh.resize(n_dofs, n_dofs); Rh<< .0001;
-     // Eigen::MatrixXd Rr; Rr.resize(n_dofs, n_dofs); Rr<< .0001;
-
      Eigen::MatrixXd Rh = .0001 * Eigen::MatrixXd::Identity(n_dofs,n_dofs);
      Eigen::MatrixXd Rr = .0001 * Eigen::MatrixXd::Identity(n_dofs,n_dofs);
      double alpha = 0.5;
 
-     Arbitration arbitration;
+     Arbitration arbitration(0.5);
      double cos_theta;
      int decision;
 
@@ -172,7 +146,7 @@ int main(int argc, char **argv)
      cgt.setPosReference(rh,rr);
      ncgt.setPosReference(rh,rr);  
 
-     for (int i = 0;i<100;i++)  
+     for (int i = 0;i<500;i++)  
      {
     
           rh = ref_h.col(i);
@@ -189,18 +163,16 @@ int main(int argc, char **argv)
 
           cgt.step(cgt_state ,rh,rr);
           std::cout<<"cgt_state: "<<cgt_state.transpose()<<std::endl;
-          // ROS_INFO_STREAM("cgt_state : "<<cgt_state .transpose());
 
           Eigen::VectorXd ncgt_state = ncgt.getCurrentState();
-          // Eigen::VectorXd u_ncgt = ncgt.computeControlInputs();
-          // Eigen::VectorXd u1_ncgt = u_ncgt.segment(0,n_dofs);
-          // Eigen::VectorXd u2_ncgt = u_ncgt.segment(n_dofs,n_dofs);
-          // arbitration.CosineSimilarity(u1_ncgt, u2_ncgt, cos_theta, decision);
-          // std::cout<<"cos_theta: "<<cos_theta<<std::endl;
-          // std::cout<<"decision: "<< decision<<std::endl;
+          Eigen::VectorXd u_ncgt = ncgt.computeControlInputs();
+          Eigen::VectorXd u1_ncgt = u_ncgt.segment(0,n_dofs);
+          Eigen::VectorXd u2_ncgt = u_ncgt.segment(n_dofs,n_dofs);
+          arbitration.CosineSimilarity(u1_ncgt, u2_ncgt, cos_theta, decision);
+          std::cout<<"cos_theta: "<<cos_theta<<std::endl;
+          std::cout<<"decision: "<< decision<<std::endl;
           ncgt.step(ncgt_state ,rh,rr);
           std::cout<<"ncgt_state: "<<ncgt_state.transpose()<<std::endl;
-          // ROS_INFO_STREAM("ncgt_state : "<<ncgt_state .transpose());
      }
      
      
