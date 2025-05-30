@@ -19,9 +19,13 @@ public:
     
     // Method to perform I Level arbitration
     void CosineSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision);
+    void CosineSimilarityHysteresis(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision, double switch_on_point, double switch_off_point);
 protected:
 
     double cosine_similarity_threshold_; // Default threshold for cosine similarity
     double epsilon_; // Small value to avoid division by zero
+    bool switch_on_triggered_ = true; // Flag for switch on state
+    bool switch_off_triggered_ = false; // Flag for switch off state
+    int hysteresis_decision_ = 0;
 };
 #endif
