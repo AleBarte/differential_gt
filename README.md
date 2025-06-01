@@ -45,6 +45,9 @@ doi={10.1109/TASE.2023.3320708}}
 1. Better documentation
 2. purge from ros
 
+### Note
+The header files and the .cpp files work independently of the version of ros. The package is just a wrapper to allow usage in a ros2 workspace.
+
 
 
 ## Contacts
