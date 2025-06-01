@@ -8,8 +8,17 @@ find_package(Eigen3 REQUIRED)
 
 include_directories(include)
 
+add_library(gt_lib
+  src/cgt.cpp
+  src/ncgt.cpp
+  src/arbitration.cpp
+)
+
 # Create the executable
-add_executable(differential_gt_node src/differential_gt_node.cpp)
+add_executable(differential_gt_node src/dgt_node.cpp
+)
+
+target_link_libraries(differential_gt_node gt_lib)
 
 # Link libraries
 ament_target_dependencies(differential_gt_node rclcpp Eigen3)
