@@ -12,8 +12,9 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
       noncoop_gt_(3, 0.01) // Initialize NonCoopGT with 3 DoFs and 0.01 seconds time step
 {
     // Declare parameters
-    this->declare_parameter<std::string>("ho_wrench_topic", "/wrench_from_ho");
-    this->declare_parameter<std::string>("acs_wrench_pub_topic", "/wrench_from_acs");
+    this->declare_parameter<std::string>("ho_wrench_topic", "/falcon_joystick/joystick_wrench");
+    this->declare_parameter<std::string>("acs_wrench_pub_topic", "/differential_gt/wrench_from_acs");
+    this->declare_parameter<std::string>("ho_wrench_pub_topic", "/differential_gt/wrench_from_ho");
     this->declare_parameter<std::string>("pose_topic", "/admittance_controller/pose_debug");
     this->declare_parameter<std::string>("twist_topic", "/admittance_controller/end_effector_twist");
     this->declare_parameter<std::string>("base_frame", "base_link");
@@ -21,11 +22,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("switch_on_point", 0.8);
     this->declare_parameter<double>("switch_off_point", 0.0);
     this->declare_parameter<double>("publishing_rate", 500.0);
-    this->declare_parameter<bool>("override_ho_wrench", true);
+    this->declare_parameter<bool>("override_ho_wrench", false);
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
     this->acs_wrench_pub_topic_ = this->get_parameter("acs_wrench_pub_topic").as_string();
+    this->ho_wrench_pub_topic_ = this->get_parameter("ho_wrench_pub_topic").as_string();
     this->pose_topic_ = this->get_parameter("pose_topic").as_string();
     this->twist_topic_ = this->get_parameter("twist_topic").as_string();
     this->base_frame_ = this->get_parameter("base_frame").as_string();
@@ -37,6 +39,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
 
     // Initialize publishers and subscribers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
+    this->wrench_from_ho_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_pub_topic_, 10);
 
     this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
         this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
@@ -46,6 +49,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     
     this->twist_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
         this->twist_topic_, 10, std::bind(&DifferentialGT::TwistCallback, this, std::placeholders::_1));
+
+    this->desired_ee_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+        "/twist_cmds", 10, std::bind(&DifferentialGT::DesiredEEVelCallback, this, std::placeholders::_1));
+
+    this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+        "/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
     
 
     // Arbitration
@@ -68,7 +77,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->noncoop_gt_.setSysParams(this->A_, this->B_);
 
     //* Set initial value of alpha for arbitration
-    this->alpha_ = 0.1; // Default value, can be changed later
+    this->alpha_ = 0.9; // Default value, can be changed later
     this->coop_gt_.setAlpha(this->alpha_);
     
     // Setup game theory objects with cost matrices
@@ -77,7 +86,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
     this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
     
-    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
+    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_ * 30.0, this->Rh_, this->Rr_);
     //!--------------------------------------------------------------------------------
 
     //! Precompute the cooperative gains (alpha constant) -----------------------------
@@ -107,7 +116,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     }
 
     //TODO: Remove, Just for marco experiment
-    this->ComputeTrajectories();
+    // this->ComputeTrajectories();
+    // this->ComputeLinearTrajectory();
     //TODO ----------------------------------
 
     // Initialization concluded
@@ -118,6 +128,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->ref_acs_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/differential_gt/acs_ref", 10);
     this->cos_theta_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/differential_gt/cos_theta", 10);
     this->decision_pub_ = this->create_publisher<std_msgs::msg::Int32>("/differential_gt/decision", 10);
+    this->ho_ncgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/ho_nc_wrench", 10);
+    this->acs_ncgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/acs_nc_wrench", 10);
+    this->ho_cgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/ho_coop_wrench", 10);
+    this->acs_cgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/acs_coop_wrench", 10);
+
+    this->cos_theta_msg_.data.resize(2);
 
 }
 
@@ -137,6 +153,10 @@ bool DifferentialGT::Startup()
 
         // Record the initial position
         this->initial_position_ = this->position_;
+        this->acs_ref_.resize(3);
+        this->acs_ref_ = this->initial_position_;
+        this->ho_ref_.resize(3);
+        this->ho_ref_ = this->initial_position_;
 
         // Set initial orientation
         Eigen::Quaterniond q(
@@ -154,7 +174,17 @@ bool DifferentialGT::Startup()
     return true;
 }
 
+//---------------------------------------------------
+// Desired End Effector Velocity callback
+void DifferentialGT::DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+        return;
 
+    this->desired_ee_vel_[0] = msg->twist.linear.x;
+    this->desired_ee_vel_[1] = msg->twist.linear.y;
+    this->desired_ee_vel_[2] = msg->twist.linear.z;
+}
 
 
 //----------------------------------------------------
@@ -197,6 +227,20 @@ void DifferentialGT::TwistCallback(const geometry_msgs::msg::TwistStamped::Share
     this->linear_velocity_[2] = msg->twist.linear.z;
 }
 
+//----------------------------------------------------
+// TwistFromSafetyFilterCallback
+void DifferentialGT::TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+    {
+        return;
+    }
+
+    this->twist_from_safety_filter_[0] = msg->twist.linear.x;
+    this->twist_from_safety_filter_[1] = msg->twist.linear.y;
+    this->twist_from_safety_filter_[2] = msg->twist.linear.z;
+}
+
 void DifferentialGT::ComputeACSAction()
 {
 
@@ -205,13 +249,12 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd ref_r;
     ref_h.resize(3);
     ref_r.resize(3);
-    ref_h << this->ho_ref_(0, this->traj_index_), this->ho_ref_(1, this->traj_index_), this->ho_ref_(2, this->traj_index_); // Reference for HO
-    ref_r << this->acs_ref_(0, this->traj_index_), this->acs_ref_(1, this->traj_index_), this->acs_ref_(2, this->traj_index_); // Reference for the ACS
 
-    if (this->traj_index_ < this->ho_ref_.cols() - 1)
-    {
-        this->traj_index_++;
-    }
+
+    this->ComputeReferences(ref_h, ref_r);
+    std::cout << "Reference HO: " << ref_h.transpose() << std::endl;
+    std::cout << "Reference ACS: " << ref_r.transpose() << std::endl;
+
 
     //! These lines are for debugging --------------------
     this->ref_ho_msg_.header.stamp = this->now();
@@ -272,21 +315,47 @@ void DifferentialGT::ComputeACSAction()
     // First Level Arbitration (Cosine Similarity)
     int decision;
     double cos_theta;
+    double cos_theta_coop, cos_theta_nc;
     if (!this->override_ho_wrench_)
     {
         //! The non-cooperative action is always used for arbitration
-        this->arbitration_.CosineSimilarityHysteresis(uh_real, u_ncgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_);
+        this->arbitration_.CosineSimilarityHysteresis(uh_real, u_cgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
+        // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, cos_theta_coop, cos_theta_nc, decision);
     } else {
         // 
-        this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, u_ncgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_);
+        this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, u_ncgt_a, cos_theta_coop, decision, this->switch_on_point_, this->switch_off_point_);
     }
 
     //! These lines are for debugging --------------------
     this->cos_theta_msg_.data.clear();
-    this->cos_theta_msg_.data.push_back(cos_theta);
-
-
+    this->cos_theta_msg_.data.push_back(cos_theta_coop);
+    this->cos_theta_msg_.data.push_back(cos_theta_nc);
     this->decision_msg_.data = decision;
+
+    this->acs_ncgt_wrench_msg_.header.stamp = this->now();
+    this->acs_ncgt_wrench_msg_.header.frame_id = this->base_frame_;
+    this->acs_ncgt_wrench_msg_.wrench.force.x = u_ncgt_a[0];
+    this->acs_ncgt_wrench_msg_.wrench.force.y = u_ncgt_a[1];
+    this->acs_ncgt_wrench_msg_.wrench.force.z = u_ncgt_a[2];
+
+    this->ho_ncgt_wrench_msg_.header.stamp = this->now();
+    this->ho_ncgt_wrench_msg_.header.frame_id = this->base_frame_;
+    this->ho_ncgt_wrench_msg_.wrench.force.x = u_ncgt_h[0];
+    this->ho_ncgt_wrench_msg_.wrench.force.y = u_ncgt_h[1];
+    this->ho_ncgt_wrench_msg_.wrench.force.z = u_ncgt_h[2];
+
+    this->ho_cgt_wrench_msg_.header.stamp = this->now();
+    this->ho_cgt_wrench_msg_.header.frame_id = this->base_frame_;
+    this->ho_cgt_wrench_msg_.wrench.force.x = u_cgt_h[0];
+    this->ho_cgt_wrench_msg_.wrench.force.y = u_cgt_h[1];
+    this->ho_cgt_wrench_msg_.wrench.force.z = u_cgt_h[2];
+
+    this->acs_cgt_wrench_msg_.header.stamp = this->now();
+    this->acs_cgt_wrench_msg_.header.frame_id = this->base_frame_;
+    this->acs_cgt_wrench_msg_.wrench.force.x = u_cgt_a[0];
+    this->acs_cgt_wrench_msg_.wrench.force.y = u_cgt_a[1];
+    this->acs_cgt_wrench_msg_.wrench.force.z = u_cgt_a[2];
+    //!---------------------------------------------------
 
 
 
@@ -324,6 +393,19 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
     this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
     this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
+    this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
+    this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
+    this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
+
+
+    this->wrench_ho_topub_msg_.header.stamp = this->now();
+    this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
+    this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
+    this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
+    this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
+    this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
+    this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
+    this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
 
 }
 
@@ -383,7 +465,7 @@ void DifferentialGT::SetCostMatrices()
     
 
 
-
+    //! Changed from e-4 to e-3
     this->Qhh_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
     this->Qhr_.block(0, 0, 3, 3) = Eigen::Matrix3d::Zero();
@@ -413,43 +495,123 @@ void DifferentialGT::Publish()
     // Compute the ACS action
     this->ComputeACSAction();
     this->wrench_from_acs_pub_->publish(this->wrench_from_acs_msg_);
+    this->wrench_from_ho_pub_->publish(this->wrench_ho_topub_msg_);
 
     //TODO Debugging
     this->ref_ho_pub_->publish(this->ref_ho_msg_);
     this->ref_acs_pub_->publish(this->ref_acs_msg_);
     this->cos_theta_pub_->publish(this->cos_theta_msg_);
     this->decision_pub_->publish(this->decision_msg_);
+    this->acs_cgt_wrench_pub_->publish(this->acs_cgt_wrench_msg_);
+    this->ho_cgt_wrench_pub_->publish(this->ho_cgt_wrench_msg_);
+    this->acs_ncgt_wrench_pub_->publish(this->acs_ncgt_wrench_msg_);
+    this->ho_ncgt_wrench_pub_->publish(this->ho_ncgt_wrench_msg_);
 }
 
 //----------------------------------------------------
 // Compute Trajectories
-void DifferentialGT::ComputeTrajectories()
-{
-    double Tend = 80.0; // End time of the trajectory in seconds
-    double dt = 1 / this->publishing_rate_; // Time step in seconds
+// void DifferentialGT::ComputeTrajectories()
+// {
+//     double Tend = 80.0; // End time of the trajectory in seconds
+//     double dt = 1 / this->publishing_rate_; // Time step in seconds
 
-    int N = static_cast<int>(Tend / dt); // Number of time steps
+//     int N = static_cast<int>(Tend / dt) + 1; // Number of time steps
 
-    this->ho_ref_.resize(3, N);
-    this->acs_ref_.resize(3, N);
-    this->ho_ref_.setZero();
-    this->acs_ref_.setZero();
+//     this->ho_ref_.resize(3, N);
+//     this->acs_ref_.resize(3, N);
+//     this->ho_ref_.setZero();
+//     this->acs_ref_.setZero();
 
-    for (int i = 0; i < N; i++)
-    {
-        double t = i * dt;
-        double theta = 0.1 * t;
-        double bump1 = 0.03 * std::exp(-std::pow((theta - 1.57) / 0.5, 2));
-        double bump2 = 0.03 * std::exp(-std::pow((theta - 4.71) / 0.5, 2));
-        double Rh = 0.1 + bump1 + bump2; // Radius of the reference circle for the first agent
+//     for (int i = 0; i < N; i++)
+//     {
+//         double t = i * dt;
+//         double theta = 0.1 * t;
+//         double bump1 = 0.03 * std::exp(-std::pow((theta - 1.57) / 0.5, 2));
+//         double bump2 = 0.03 * std::exp(-std::pow((theta - 4.71) / 0.5, 2));
+//         double Rh = 0.1 + bump1 + bump2; // Radius of the reference circle for the first agent
 
-        this->ho_ref_(0, i) = this->initial_position_[0] + Rh * std::sin(theta);
-        this->ho_ref_(1, i) = this->initial_position_[1] + Rh * std::cos(theta);
-        this->ho_ref_(2, i) = this->initial_position_[2];
+//         this->ho_ref_(0, i) = this->initial_position_[0] + Rh * std::sin(theta);
+//         this->ho_ref_(1, i) = this->initial_position_[1] + Rh * std::cos(theta);
+//         this->ho_ref_(2, i) = this->initial_position_[2];
 
-        this->acs_ref_(0, i) = this->initial_position_[0] + 0.1 * std::sin(theta);
-        this->acs_ref_(1, i) = this->initial_position_[1] + 0.1 * std::cos(theta);
-        this->acs_ref_(2, i) = this->initial_position_[2];
-    }
+//         this->acs_ref_(0, i) = this->initial_position_[0] + 0.1 * std::sin(theta);
+//         this->acs_ref_(1, i) = this->initial_position_[1] + 0.1 * std::cos(theta);
+//         this->acs_ref_(2, i) = this->initial_position_[2];
+//     }
     
+// }
+
+//--------------------------------------------------------
+// Compute Linear Trajectory
+// void DifferentialGT::ComputeLinearTrajectory()
+// {
+//     double Tend = 60.0;
+//     double dt = 1 / this->publishing_rate_;
+
+//     int N = static_cast<int>(Tend / dt) + 1;
+
+//     Eigen::Vector3d p0 = this->position_;
+
+//     Eigen::Vector3d delta_acs(0.2, 0.0, 0.0);
+//     Eigen::Vector3d delta_ho(0.2, 0.0, 0.0);
+
+//     Eigen::Vector3d pf_acs = p0 + delta_acs;
+//     Eigen::Vector3d pf_ho = p0 + delta_ho;
+
+//     double norm_ho = (pf_ho - p0).norm();
+//     double norm_acs = (pf_acs - p0).norm();
+
+//     // Third order polynomial timing law
+//     double a2_acs = 3.0 * norm_acs / std::pow(Tend, 2);
+//     double a2_ho = 3.0 * norm_ho / std::pow(Tend, 2);
+//     double a3_acs = -2 * norm_acs / std::pow(Tend, 3);
+//     double a3_ho = -2 * norm_ho / std::pow(Tend, 3);
+
+//     this->ho_ref_.resize(3, N);
+//     this->acs_ref_.resize(3, N);
+//     this->ho_ref_.setZero();
+//     this->acs_ref_.setZero();
+
+//     for (int i = 0; i < N; i++)
+//     {
+//         double t = i * dt;
+//         double s_acs = a2_acs * std::pow(t, 2) + a3_acs * std::pow(t, 3);
+//         double s_ho = a2_ho * std::pow(t, 2) + a3_ho * std::pow(t, 3);
+
+//         this->ho_ref_(0, i) = p0[0] + s_ho / norm_ho * (pf_ho[0] - p0[0]);
+//         this->ho_ref_(1, i) = p0[1] + s_ho / norm_ho * (pf_ho[1] - p0[1]);
+//         this->ho_ref_(2, i) = p0[2] + s_ho / norm_ho * (pf_ho[2] - p0[2]);
+
+//         this->acs_ref_(0, i) = p0[0] + s_acs / norm_acs * (pf_acs[0] - p0[0]);
+//         this->acs_ref_(1, i) = p0[1] + s_acs / norm_acs * (pf_acs[1] - p0[1]);
+//         this->acs_ref_(2, i) = p0[2] + s_acs / norm_acs * (pf_acs[2] - p0[2]);
+
+//     }
+// }
+
+void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r)
+{
+    // Compute the reference for the HO and ACS
+    ref_h.resize(3);
+    ref_r.resize(3);
+
+    // Compute the reference for the HO based on the applied force F = m * a
+    double dt = 1.0 / this->publishing_rate_;
+    Eigen::Vector3d acceleration(
+        this->wrench_from_ho_msg_.wrench.force.x * 5.0,
+        this->wrench_from_ho_msg_.wrench.force.y * 5.0,
+        this->wrench_from_ho_msg_.wrench.force.z * 5.0);
+
+    this->ho_ref_ = acceleration * std::pow(dt, 2) + this->ho_ref_;
+    ref_h << this->ho_ref_[0],
+             this->ho_ref_[1],
+             this->ho_ref_[2];
+    
+    // Compute the reference for the ACS based on the safety filter reading //TODO
+    ref_r.resize(3);
+    this->acs_ref_ = this->twist_from_safety_filter_ * dt + this->acs_ref_;
+    ref_r << this->acs_ref_[0],
+             this->acs_ref_[1],
+             this->acs_ref_[2];
+
 }

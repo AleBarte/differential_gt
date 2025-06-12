@@ -72,3 +72,17 @@ void Arbitration::CosineSimilarityHysteresis(Eigen::VectorXd& v1, Eigen::VectorX
 
 }
 
+//---------------------------------------------------------------
+// Cosine similarity nearest vector
+void Arbitration::CosineSimilarityNearestVector(Eigen::VectorXd& v1, Eigen::VectorXd& v2, Eigen::VectorXd& v3, double& cos_theta12, double& cos_theta13, int& decision)
+{
+    cos_theta12 = v1.dot(v2) / (v1.norm() * v2.norm() + this->epsilon_);
+    cos_theta13 = v1.dot(v3) / (v1.norm() * v3.norm() + this->epsilon_);
+
+    if (cos_theta12 >= cos_theta13)
+    {
+        decision = 0;
+    } else {
+        decision = 1;
+    }
+}

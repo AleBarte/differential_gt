@@ -31,6 +31,8 @@ private:
     
     void PoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
+    void DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg); //TODO: Remove this
+    void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
     
     // Functions
     void SetSystemMatrices();
@@ -39,25 +41,37 @@ private:
     void ComputeACSAction();
 
     //TODO Maybe reomove -----------------
-    void ComputeTrajectories();
+    // void ComputeTrajectories();
+    // void ComputeLinearTrajectory();
     //TODO---------------------------------
+    
+    void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r);
+
 
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;
+    
 
     // Subscribers
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr desired_ee_vel_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;
     Eigen::Vector3d position_;
     Eigen::Matrix3d orientation_;
     Eigen::Vector3d linear_velocity_ = Eigen::Vector3d::Zero(); // Initialize linear velocity to zero
+    Eigen::Vector3d desired_ee_vel_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero(); // Initialize twist from safety filter to zero
 
     // Messages to publish
     geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_;
+    geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_;
+    
 
     // Game Theory Objects
     CoopGT coop_gt_; 
@@ -98,6 +112,7 @@ private:
     std::string acs_wrench_pub_topic_;
     std::string pose_topic_;
     std::string twist_topic_;
+    std::string ho_wrench_pub_topic_;
     std::string base_frame_; // Base frame for the robot, can be set as a parameter
     std::string end_effector_;
     double switch_on_point_;
@@ -120,18 +135,30 @@ private:
     Eigen::Vector3d initial_position_; // Initial position of the end effector
 
     //TODO: Remove. These are to test marco experiment
-    int traj_index_ = 0; // Index of the current trajectory
-    Eigen::MatrixXd ho_ref_;
-    Eigen::MatrixXd acs_ref_;
+    // int traj_index_ = 0; // Index of the current trajectory
+    // Eigen::MatrixXd ho_ref_;
+    // Eigen::MatrixXd acs_ref_;
+    //TODO --------------------------------------------------
+
+    Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
+    Eigen::VectorXd ho_ref_; // Reference trajectory for the HO
 
     //TODO Remove debugging
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_ho_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_acs_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr cos_theta_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr ho_ncgt_wrench_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr acs_ncgt_wrench_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr ho_cgt_wrench_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr acs_cgt_wrench_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr decision_pub_;
 
     geometry_msgs::msg::PoseStamped ref_ho_msg_;
     geometry_msgs::msg::PoseStamped ref_acs_msg_;
+    geometry_msgs::msg::WrenchStamped ho_ncgt_wrench_msg_;
+    geometry_msgs::msg::WrenchStamped acs_ncgt_wrench_msg_;
+    geometry_msgs::msg::WrenchStamped ho_cgt_wrench_msg_;
+    geometry_msgs::msg::WrenchStamped acs_cgt_wrench_msg_;
     std_msgs::msg::Float64MultiArray cos_theta_msg_;
     std_msgs::msg::Int32 decision_msg_;
 

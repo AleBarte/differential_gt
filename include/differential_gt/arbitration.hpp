@@ -22,6 +22,8 @@ public:
     // Method to perform I Level arbitration with hysteresis
     void CosineSimilarityHysteresis(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision, 
                                     double switch_on_point, double switch_off_point);
+
+    void CosineSimilarityNearestVector(Eigen::VectorXd& v1, Eigen::VectorXd& v2, Eigen::VectorXd& v3, double& cos_theta12, double& cos_theta13, int& decision);
 protected:
 
     double cosine_similarity_threshold_; // Default threshold for cosine similarity
