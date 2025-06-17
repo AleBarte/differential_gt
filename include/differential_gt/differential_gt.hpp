@@ -12,6 +12,7 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"                 // For Twist messages
 #include "std_msgs/msg/float64_multi_array.hpp"                // For Float64MultiArray messages
 #include "std_msgs/msg/int32.hpp"                            // For Int32 messages
+#include "sensor_msgs/msg/joy.hpp"                             // For joystick input
 #include <tf2_ros/transform_listener.h>                        // TF2 Transform listener
 #include <tf2_ros/buffer.h>                                    // TF2 Buffer
 #include <tf2/LinearMath/Quaternion.h>                         // TF2 Quaternion math
@@ -33,6 +34,7 @@ private:
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
     void DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg); //TODO: Remove this
     void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
+    void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg); // For joystick input, if needed
     
     // Functions
     void SetSystemMatrices();
@@ -59,6 +61,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr desired_ee_vel_sub_;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_; // For joystick input, if needed
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;
@@ -82,6 +85,7 @@ private:
 
     // Arbitration level
     double alpha_;
+    int cosine_similarity_counter_ = 0;
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;
@@ -130,6 +134,7 @@ private:
 
     // Flags
     bool is_initialized_ = false; // Flag to check if the node is initialized
+    bool button_pressed_ = false; 
 
     // Debugging
     Eigen::Vector3d initial_position_; // Initial position of the end effector

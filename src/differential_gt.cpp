@@ -20,7 +20,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("end_effector", "tool0");
     this->declare_parameter<double>("switch_on_point", 0.8);
-    this->declare_parameter<double>("switch_off_point", 0.0);
+    this->declare_parameter<double>("switch_off_point", 0.2);
     this->declare_parameter<double>("publishing_rate", 500.0);
     this->declare_parameter<bool>("override_ho_wrench", false);
 
@@ -55,6 +55,9 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
 
     this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
         "/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
+
+    this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
+        "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
     
 
     // Arbitration
@@ -90,12 +93,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     //!--------------------------------------------------------------------------------
 
     //! Precompute the cooperative gains (alpha constant) -----------------------------
-    auto t_start = std::chrono::high_resolution_clock::now();
-    this->coop_gt_.computeCooperativeGains(this->alpha_);
-    this->K_cgt_ = this->coop_gt_.getCooperativeGains();
-    auto t_end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = t_end - t_start;
-    std::cout << "Elapsed time: " << elapsed.count() << " seconds" << std::endl;
+    // auto t_start = std::chrono::high_resolution_clock::now();
+    // this->coop_gt_.computeCooperativeGains(this->alpha_);
+    // this->K_cgt_ = this->coop_gt_.getCooperativeGains();
+    // auto t_end = std::chrono::high_resolution_clock::now();
+    // std::chrono::duration<double> elapsed = t_end - t_start;
+    // std::cout << "Elapsed time: " << elapsed.count() << " seconds" << std::endl;
     //!-------------------------------------------------------------------------------
     
     // Precompute the non-cooperative gains (as long as matrices are constant)
@@ -134,6 +137,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->acs_cgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/acs_coop_wrench", 10);
 
     this->cos_theta_msg_.data.resize(2);
+
+    this->cosine_similarity_counter_ = 0;
 
 }
 
@@ -184,6 +189,22 @@ void DifferentialGT::DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped
     this->desired_ee_vel_[0] = msg->twist.linear.x;
     this->desired_ee_vel_[1] = msg->twist.linear.y;
     this->desired_ee_vel_[2] = msg->twist.linear.z;
+}
+
+//----------------------------------------------------
+// ButtonsCallback
+void DifferentialGT::ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+        return;
+
+    // Check if the button is pressed
+    if (msg->buttons[0] > 0) // Assuming button 0 is the one to toggle
+    {
+        this->button_pressed_ = true;
+    }else{
+        this->button_pressed_ = false;
+    }
 }
 
 
@@ -278,9 +299,8 @@ void DifferentialGT::ComputeACSAction()
 
     //! If alpha is fixed this part can be precomputed-----------------------------------------------
     // Compute control gains
-    //? Moved inside the constructor
-    // this->coop_gt_.computeCooperativeGains(this->alpha_);
-    // this->K_cgt_ = this->coop_gt_.getCooperativeGains();
+    this->coop_gt_.computeCooperativeGains(this->alpha_);
+    this->K_cgt_ = this->coop_gt_.getCooperativeGains();
     //!-----------------------------------------------------------------------------------------------
 
     //! As long as no matrices change here, this can be precomputed ----------------------------------
@@ -312,24 +332,32 @@ void DifferentialGT::ComputeACSAction()
                 this->wrench_from_ho_msg_.wrench.force.y,
                 this->wrench_from_ho_msg_.wrench.force.z;
 
-    // First Level Arbitration (Cosine Similarity)
     int decision;
     double cos_theta;
     double cos_theta_coop, cos_theta_nc;
-    if (!this->override_ho_wrench_)
-    {
-        //! The non-cooperative action is always used for arbitration
-        this->arbitration_.CosineSimilarityHysteresis(uh_real, u_cgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
-        // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, cos_theta_coop, cos_theta_nc, decision);
-    } else {
-        // 
-        this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, u_ncgt_a, cos_theta_coop, decision, this->switch_on_point_, this->switch_off_point_);
+
+    this->cosine_similarity_counter_++;
+    if (this->cosine_similarity_counter_ >= 2) {
+        // First Level Arbitration (Cosine Similarity)
+        if (!this->override_ho_wrench_)
+        {
+            //! The cooperative action is always used for arbitration
+            // this->arbitration_.CosineSimilarity(uh_real, u_cgt_a, cos_theta, decision);
+            this->arbitration_.CosineSimilarityHysteresis(uh_real, u_cgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
+            // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, cos_theta_coop, cos_theta_nc, decision);
+            // this->arbitration_.CosineSimilarityFiltered(uh_real, u_cgt_a, cos_theta, decision, 0.01);
+        } else {
+            // 
+            this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, u_ncgt_a, cos_theta_coop, decision, this->switch_on_point_, this->switch_off_point_);
+        }
     }
 
     //! These lines are for debugging --------------------
     this->cos_theta_msg_.data.clear();
+    this->cos_theta_msg_.data.push_back(cos_theta);
     this->cos_theta_msg_.data.push_back(cos_theta_coop);
     this->cos_theta_msg_.data.push_back(cos_theta_nc);
+    this->cos_theta_msg_.data.push_back(this->alpha_);
     this->decision_msg_.data = decision;
 
     this->acs_ncgt_wrench_msg_.header.stamp = this->now();
@@ -383,7 +411,14 @@ void DifferentialGT::ComputeACSAction()
     // TODO: Second Level Arbitration (alpha modulation) needed for the next cycle
 
     // Update the Cooperative Game Theory object with the new value of alpha
-    // this->coop_gt_.updateGTMatrices(this->alpha_);
+    //? acs_action seems to perform better
+    if(this->cosine_similarity_counter_ >= 2) {
+        // this->alpha_ = this->arbitration_.SecondLevelArbitrationACSOverride(uh_real, acs_action);
+        this->alpha_ = this->arbitration_.SecondLevelArbitrationACSOverrideFiltered(uh_real, acs_action, 0.01);
+        // this->alpha_ = this->arbitration_.SecondLevelArbitrationSplit(uh_real, acs_action);
+        this->cosine_similarity_counter_ = 0; // Reset the counter after arbitration
+    }
+
 
     // TODO ------------------------------------------------------------------------
 
@@ -594,6 +629,12 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     // Compute the reference for the HO and ACS
     ref_h.resize(3);
     ref_r.resize(3);
+
+    if (!this->button_pressed_)
+    {
+        // If the button is not pressed, use the ACS reference
+        this->ho_ref_ = this->acs_ref_;
+    }
 
     // Compute the reference for the HO based on the applied force F = m * a
     double dt = 1.0 / this->publishing_rate_;
