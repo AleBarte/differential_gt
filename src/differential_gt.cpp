@@ -332,33 +332,15 @@ void DifferentialGT::ComputeACSAction()
                 this->wrench_from_ho_msg_.wrench.force.y,
                 this->wrench_from_ho_msg_.wrench.force.z;
 
-    int decision;
-    double cos_theta;
-    double cos_theta_coop, cos_theta_nc;
 
-    this->cosine_similarity_counter_++;
-    if (this->cosine_similarity_counter_ >= 2) {
-        // First Level Arbitration (Cosine Similarity)
-        if (!this->override_ho_wrench_)
-        {
-            //! The cooperative action is always used for arbitration
-            // this->arbitration_.CosineSimilarity(uh_real, u_cgt_a, cos_theta, decision);
-            this->arbitration_.CosineSimilarityHysteresis(uh_real, u_cgt_a, cos_theta, decision, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
-            // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, cos_theta_coop, cos_theta_nc, decision);
-            // this->arbitration_.CosineSimilarityFiltered(uh_real, u_cgt_a, cos_theta, decision, 0.01);
-        } else {
-            // 
-            this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, u_ncgt_a, cos_theta_coop, decision, this->switch_on_point_, this->switch_off_point_);
-        }
-    }
 
     //! These lines are for debugging --------------------
     this->cos_theta_msg_.data.clear();
-    this->cos_theta_msg_.data.push_back(cos_theta);
-    this->cos_theta_msg_.data.push_back(cos_theta_coop);
-    this->cos_theta_msg_.data.push_back(cos_theta_nc);
+    this->cos_theta_msg_.data.push_back(this->cos_theta_);
+    this->cos_theta_msg_.data.push_back(this->cos_theta_coop_);
+    this->cos_theta_msg_.data.push_back(this->cos_theta_nc_);
     this->cos_theta_msg_.data.push_back(this->alpha_);
-    this->decision_msg_.data = decision;
+    this->decision_msg_.data = this->decision_;
 
     this->acs_ncgt_wrench_msg_.header.stamp = this->now();
     this->acs_ncgt_wrench_msg_.header.frame_id = this->base_frame_;
@@ -390,7 +372,7 @@ void DifferentialGT::ComputeACSAction()
     
  
     Eigen::VectorXd acs_action(3); // Action to be published
-    if (decision == 0) // Use cooperative action
+    if (this->decision_ == 0) // Use cooperative action
     {
         acs_action = u_cgt_a;
         if (this->override_ho_wrench_)
@@ -408,9 +390,27 @@ void DifferentialGT::ComputeACSAction()
     }
 
 
-    // TODO: Second Level Arbitration (alpha modulation) needed for the next cycle
+    // Arbitration
 
-    // Update the Cooperative Game Theory object with the new value of alpha
+    // First level arbitration based on cosine similarity
+
+    this->cosine_similarity_counter_++;
+    if (this->cosine_similarity_counter_ >= 2) {
+        // First Level Arbitration (Cosine Similarity)
+        if (!this->override_ho_wrench_)
+        {
+            //! The cooperative action is always used for arbitration
+            // this->arbitration_.CosineSimilarity(uh_real, u_cgt_a, this->cos_theta_, this->decision_);
+            this->arbitration_.CosineSimilarityHysteresis(uh_real, acs_action, this->cos_theta_, this->decision_, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
+            // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, this->cos_theta_coop_, this->cos_theta_nc_, this->decision_);
+            // this->arbitration_.CosineSimilarityFiltered(uh_real, u_cgt_a, this->cos_theta_, this->decision_, 0.01);
+        } else {
+            // 
+            this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, acs_action, this->cos_theta_coop_, this->decision_, this->switch_on_point_, this->switch_off_point_);
+        }
+    }
+
+    // Second Level Arbitration
     //? acs_action seems to perform better
     if(this->cosine_similarity_counter_ >= 2) {
         // this->alpha_ = this->arbitration_.SecondLevelArbitrationACSOverride(uh_real, acs_action);

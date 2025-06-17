@@ -86,6 +86,10 @@ private:
     // Arbitration level
     double alpha_;
     int cosine_similarity_counter_ = 0;
+    int decision_ = 0; // Decision made by the arbitration
+    double cos_theta_ = 0.0; // Cosine similarity value
+    double cos_theta_coop_ = 0.0; // Cosine similarity value for cooperative action
+    double cos_theta_nc_ = 0.0; // Cosine similarity value for non
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;
