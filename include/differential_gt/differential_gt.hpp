@@ -108,6 +108,10 @@ private:
     // System Matrices
     Eigen::MatrixXd A_; // System matrix for cooperative GT
     Eigen::MatrixXd B_; // Input matrix for cooperative GT
+    Eigen::MatrixXd F_;
+    Eigen::MatrixXd G_; 
+
+    Eigen::Vector3d z_;
 
     // Gains of the controllers
     Eigen::MatrixXd K_cgt_;

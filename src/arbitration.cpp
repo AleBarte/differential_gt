@@ -160,10 +160,29 @@ double Arbitration::SecondLevelArbitrationACSOverrideFiltered(Eigen::VectorXd& v
     double chi = v1_proj.norm() / v2.norm();
     double psi = std::pow(v1_oproj.norm() / v1.norm(), 2);
 
-    double alpha_prime = std::max(0.001, std::min(0.999, chi) - psi);
+    double alpha_prime = std::max(0.5, std::min(0.999, chi) - psi);
     double alpha_filtered = alpha * alpha_prime + (1 - alpha) * this->arbitration_acs_override_;
 
     this->arbitration_acs_override_ = alpha_filtered;
 
     return alpha_filtered;
+}
+
+
+
+void Arbitration::FirstLevelSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& dec, int& decision, double forgetting_factor)
+{
+    // Calculate the cosine of the angle between the two vectors
+    double cos_theta = v1.dot(v2) / (v1.norm() * v2.norm() + this->epsilon_);
+
+    this->score_ = forgetting_factor * this->score_ + cos_theta;
+
+    // Pass the score through a nonlinear map
+    dec = 1 / (1 + std::exp(-this->score_)); // Sigmoid function
+
+    if (dec >= 0.5) {
+        decision = 0; // Cooperation
+    } else {
+        decision = 1; // Non-Cooperation
+    }
 }

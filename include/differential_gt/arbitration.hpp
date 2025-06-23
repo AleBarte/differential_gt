@@ -26,6 +26,7 @@ public:
     void CosineSimilarityNearestVector(Eigen::VectorXd& v1, Eigen::VectorXd& v2, Eigen::VectorXd& v3, double& cos_theta12, double& cos_theta13, int& decision);
 
     void CosineSimilarityFiltered(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision, double alpha);
+    void FirstLevelSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& dec, int& decision, double forgetting_factor);
 
     double SecondLevelArbitrationACSOverride(Eigen::VectorXd& v1, Eigen::VectorXd& v2);
     double SecondLevelArbitrationSplit(Eigen::VectorXd& v1, Eigen::VectorXd& v2);
@@ -40,6 +41,7 @@ protected:
 
     double cos_theta_prev_ = 0.0;
     double arbitration_acs_override_ = 0.0; // Variable to store the arbitration value for ACS override
+    double score_ = 0.0;
 
 };
 #endif
