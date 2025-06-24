@@ -391,7 +391,7 @@ void DifferentialGT::ComputeACSAction()
 
 
     // Cone similarity arbitration
-    this->arbitration_.ConeSimilarityFiltered(uh_real, u_cgt_h, u_cgt_a, this->decision_, this->alpha_);
+    // this->arbitration_.ConeSimilarityFiltered(uh_real, u_cgt_h, u_cgt_a, this->decision_, this->alpha_);
 
 
     // Create the WrenchStamped message to publish
@@ -552,11 +552,13 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
              this->ho_ref_[2];
     
     Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
-    if (diff.norm() > 0.01) 
+    this->arbitration_.CosineSimilarity(this->twist_from_safety_filter_, this->z_, this->cos_theta_, this->decision_);
+    this->alpha_ = std::min(0.01, std::max(this->cos_theta_, 0.99));
+    double epsilon = 1e-2;
+    if (diff.norm() > epsilon) 
     {
     // Compute the reference for the ACS based on the safety filter reading 
     this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
-    this->decision_ = 1; // Use non-cooperative game
     } else {
         this->acs_ref_ = (1 - gamma) * this->acs_ref_ + gamma * ref_h; // If the difference is small, use the HO reference
     }

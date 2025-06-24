@@ -53,6 +53,23 @@ void Arbitration::CosineSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, dou
     }
 }
 
+void Arbitration::CosineSimilarity(Eigen::Vector3d& v1, Eigen::Vector3d& v2, double& cos_theta, int& decision)
+{
+    // Calculate the cosine of the angle between the two vectors
+    cos_theta = v1.dot(v2) / (v1.norm() * v2.norm() + this->epsilon_);
+
+    // Check if the cosine value is below a certain threshold
+    if (cos_theta > this->cosine_similarity_threshold_)
+    {
+        decision = 0; // Decision 1
+    }
+    else
+    {
+        decision = 1; // Decision 0
+    }
+}
+
+
 //------------------------------------------------------------
 // Cosine Similarity with Hysteresis
 void Arbitration::CosineSimilarityHysteresis(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision, double switch_on_point, double switch_off_point)
