@@ -168,6 +168,76 @@ double Arbitration::SecondLevelArbitrationACSOverrideFiltered(Eigen::VectorXd& v
     return alpha_filtered;
 }
 
+//---------------------------------------------------------------
+// Cone Similarity
+void Arbitration::ConeSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& a1, Eigen::VectorXd& b1, int& decision, double& alpha)
+{
+    // Calculate the cross product between a and b
+
+    Eigen::Vector3d a = a1.head<3>();
+    Eigen::Vector3d b = b1.head<3>();
+    Eigen::Vector3d v = v1.head<3>();
+
+    Eigen::VectorXd n = a.cross(b);
+    Eigen::VectorXd n_normalized = n.normalized();
+
+    // Compute the cross product between v and a and v and b
+    Eigen::VectorXd cross_v_a = v.cross(a);
+    Eigen::VectorXd cross_v_b = v.cross(b);
+
+    double cos_gamma = a.dot(b) / (a.norm() * b.norm() + this->epsilon_); // Cosine of the angle between a and b
+    double cos_delta = v.dot(a) / (v.norm() * a.norm() + this->epsilon_); // Cosine of the angle between v and a
+    cos_gamma = std::max(-1.0, std::min(1.0, cos_gamma)); // Clamp the value to [-1, 1]
+    cos_delta = std::max(-1.0, std::min(1.0, cos_delta)); // Clamp the value to [-1, 1]
+    double gamma = std::acos(cos_gamma); // Angle between a and b
+    double delta = std::acos(cos_delta); // Angle between v and a
+
+
+
+    // Check how large the cone is
+    if (gamma < 0.08)
+    {
+        std::cout << "Cone is very small." << std::endl;
+        decision = 0; // Non-Cooperation
+        alpha = 0.5; // No cooperation
+    } else if (cross_v_a.dot(n) >= 0 && cross_v_b.dot(n) >= 0 && v.dot(a) >= 0 && v.dot(b) >= 0) {
+            decision = 0; // Inside the cone
+            Eigen::VectorXd projection = v - (v.dot(n_normalized) * n_normalized); // Computing projection onto the plane defined by the a and b
+            alpha = std::max(0.001, std::min(0.999, delta / gamma));
+            std::cout << "Inside the cone: alpha = " << alpha << ", cos_gamma = " << cos_gamma << ", cos_delta = " << cos_delta << std::endl;           
+    } else {
+        decision = 1; // Outside the cone
+        alpha = 0.001; // No cooperation
+    }
+    
+
+}
+
+    
+// Cone Similarity Filtered
+void Arbitration::ConeSimilarityFiltered(Eigen::VectorXd& v1, Eigen::VectorXd& a1, Eigen::VectorXd& b1, int& decision, double& alpha)
+{
+    double alpha1 = 0.01;
+    double alpha2 = 0.01;
+
+    this->ConeSimilarity(v1, a1, b1, decision, alpha); // First level cone similarity
+
+    double dec = static_cast<double>(decision); // Convert decision to double for filtering
+    // Apply the filter to the decision value
+    this->filtered_decision_ = alpha1 * dec + (1 - alpha1) * this->filtered_decision_;
+
+    if (this->filtered_decision_ >= 0.5) {
+        decision = 1; // Cooperation
+    } else {
+        decision = 0; // Non-Cooperation
+    }
+
+    // Apply the filter to the alpha value
+    this->score_ = alpha2 * alpha + (1 - alpha2) * this->score_;
+    alpha = std::max(0.001, std::min(0.999, this->score_)); // Clamp the value to [0.001, 0.999]
+
+}
+
 
 
 void Arbitration::FirstLevelSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& dec, int& decision, double forgetting_factor)

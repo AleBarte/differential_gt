@@ -389,32 +389,9 @@ void DifferentialGT::ComputeACSAction()
 
     // Arbitration
 
-    // First level arbitration based on cosine similarity
 
-    this->cosine_similarity_counter_++;
-    if (this->cosine_similarity_counter_ >= 2) {
-        // First Level Arbitration (Cosine Similarity)
-        if (!this->override_ho_wrench_)
-        {
-            // this->arbitration_.CosineSimilarity(uh_real, u_cgt_a, this->cos_theta_, this->decision_);
-            // this->arbitration_.CosineSimilarityHysteresis(uh_real, acs_action, this->cos_theta_, this->decision_, this->switch_on_point_, this->switch_off_point_); //! Changed with u_cgt_a
-            // this->arbitration_.CosineSimilarityNearestVector(uh_real, u_cgt_h, u_ncgt_h, this->cos_theta_coop_, this->cos_theta_nc_, this->decision_);
-            // this->arbitration_.CosineSimilarityFiltered(uh_real, acs_action, this->cos_theta_, this->decision_, 0.01);
-            this->arbitration_.FirstLevelSimilarity(uh_real, acs_action, this->cos_theta_, this->decision_, 0.9);
-        } else {
-            // 
-            this->arbitration_.CosineSimilarityHysteresis(u_ncgt_h, acs_action, this->cos_theta_coop_, this->decision_, this->switch_on_point_, this->switch_off_point_);
-        }
-    }
-
-    // Second Level Arbitration
-    //? acs_action seems to perform better
-    if(this->cosine_similarity_counter_ >= 2) {
-        // this->alpha_ = this->arbitration_.SecondLevelArbitrationACSOverride(uh_real, acs_action);
-        this->alpha_ = this->arbitration_.SecondLevelArbitrationACSOverrideFiltered(uh_real, acs_action, 0.01);
-        // this->alpha_ = this->arbitration_.SecondLevelArbitrationSplit(uh_real, acs_action);
-        this->cosine_similarity_counter_ = 0; // Reset the counter after arbitration
-    }
+    // Cone similarity arbitration
+    this->arbitration_.ConeSimilarityFiltered(uh_real, u_cgt_h, u_cgt_a, this->decision_, this->alpha_);
 
 
     // Create the WrenchStamped message to publish
@@ -561,6 +538,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
     // Compute the reference for the HO based on the admittance model
     double dt = 1.0 / this->publishing_rate_;
+    double gamma = 1e-3;
     Eigen::Vector3d uh(
         this->wrench_from_ho_msg_.wrench.force.x,
         this->wrench_from_ho_msg_.wrench.force.y,
@@ -573,8 +551,15 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
              this->ho_ref_[1],
              this->ho_ref_[2];
     
+    Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
+    if (diff.norm() > 0.01) 
+    {
     // Compute the reference for the ACS based on the safety filter reading 
     this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
+    this->decision_ = 1; // Use non-cooperative game
+    } else {
+        this->acs_ref_ = (1 - gamma) * this->acs_ref_ + gamma * ref_h; // If the difference is small, use the HO reference
+    }
     ref_r << this->acs_ref_[0],
              this->acs_ref_[1],
              this->acs_ref_[2];

@@ -229,7 +229,7 @@ void CoopGT::computeCooperativeGains(const Eigen::MatrixXd& Q, const Eigen::Matr
   this->K_cgt_.topRightCorner   (this->n_dofs_, this->n_dofs_) = kk.topRightCorner(this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
   this->K_cgt_.bottomRightCorner(this->n_dofs_, this->n_dofs_) = kk.bottomRightCorner(this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
   this->K_cgt_.bottomLeftCorner (this->n_dofs_, this->n_dofs_) = kk.bottomLeftCorner (this->n_dofs_, this->n_dofs_).diagonal().asDiagonal();
-  std::cout << "K_cgt:\n" << this->K_cgt_ << std::endl;
+  // std::cout << "K_cgt:\n" << this->K_cgt_ << std::endl;
   this->gains_set_ = true;
 }
 

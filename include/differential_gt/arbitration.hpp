@@ -27,6 +27,8 @@ public:
 
     void CosineSimilarityFiltered(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& cos_theta, int& decision, double alpha);
     void FirstLevelSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, double& dec, int& decision, double forgetting_factor);
+    void ConeSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& a1, Eigen::VectorXd& b1, int& decision, double& alpha);
+    void ConeSimilarityFiltered(Eigen::VectorXd& v1, Eigen::VectorXd& a1, Eigen::VectorXd& b1, int& decision, double& alpha);
 
     double SecondLevelArbitrationACSOverride(Eigen::VectorXd& v1, Eigen::VectorXd& v2);
     double SecondLevelArbitrationSplit(Eigen::VectorXd& v1, Eigen::VectorXd& v2);
@@ -42,6 +44,7 @@ protected:
     double cos_theta_prev_ = 0.0;
     double arbitration_acs_override_ = 0.0; // Variable to store the arbitration value for ACS override
     double score_ = 0.0;
+    double filtered_decision_ = 0.0;
 
 };
 #endif
