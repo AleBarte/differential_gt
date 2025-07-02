@@ -61,7 +61,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     
 
     // Arbitration
-    this->arbitration_ = Arbitration();
+    this->arbitration_ = Arbitration(0.5);
 
     // Matrices for game theory calculations
     // TODO Parametrize these matrices
@@ -480,16 +480,15 @@ void DifferentialGT::SetCostMatrices()
     
 
 
-    //! Changed from e-4 to e-3
     this->Qhh_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
-    this->Qhr_.block(0, 0, 3, 3) = Eigen::Matrix3d::Zero();
-    this->Qhr_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
+    this->Qrh_.block(0, 0, 3, 3) = Eigen::Matrix3d::Zero();
+    this->Qrh_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
     this->Qrr_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
-    this->Qrh_.block(0, 0, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
-    this->Qrh_.block(3, 3, 3, 3) = Eigen::Matrix3d::Zero();
+    this->Qhr_.block(0, 0, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
+    this->Qhr_.block(3, 3, 3, 3) = Eigen::Matrix3d::Zero();
 
     this->Rh_ = 5e-4 * Eigen::Matrix3d::Identity();
     this->Rr_ = 1e-4 * Eigen::Matrix3d::Identity();
@@ -534,6 +533,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     {
         // If the button is not pressed, use the ACS reference
         this->ho_ref_ = this->acs_ref_;
+        
     }
 
     // Compute the reference for the HO based on the admittance model
@@ -552,8 +552,8 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
              this->ho_ref_[2];
     
     Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
-    this->arbitration_.CosineSimilarity(this->twist_from_safety_filter_, this->z_, this->cos_theta_, this->decision_);
-    this->alpha_ = std::min(0.01, std::max(this->cos_theta_, 0.99));
+    this->arbitration_.CosineSimilarity(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_);
+    this->alpha_ = std::max(0.01, std::min(this->cos_theta_, 0.99));
     double epsilon = 1e-2;
     if (diff.norm() > epsilon) 
     {
