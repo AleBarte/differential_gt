@@ -326,6 +326,7 @@ double CoopGT::getAlphaFromCurrentState(const Eigen::VectorXd& z, const Eigen::V
   Eigen::MatrixXd Qa = this->Q11_ + this->Q12_;
   Eigen::MatrixXd Qb = this->Q21_ + this->Q22_;
 
+
   // Compute the the parts composing alpha * x - b = 0
   Eigen::VectorXd x = (Qa - Qb) * z + (this->Q12_ - this->Q11_) * ref_1 + (this->Q22_ - this->Q21_) * ref_2;
   Eigen::VectorXd b = -Qb * z + this->Q12_ * ref_1 + this->Q22_ * ref_2;

@@ -91,15 +91,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     
     this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_ * 30.0, this->Rh_, this->Rr_);
     //!--------------------------------------------------------------------------------
-
-    //! Precompute the cooperative gains (alpha constant) -----------------------------
-    // auto t_start = std::chrono::high_resolution_clock::now();
-    // this->coop_gt_.computeCooperativeGains(this->alpha_);
-    // this->K_cgt_ = this->coop_gt_.getCooperativeGains();
-    // auto t_end = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> elapsed = t_end - t_start;
-    // std::cout << "Elapsed time: " << elapsed.count() << " seconds" << std::endl;
-    //!-------------------------------------------------------------------------------
     
     // Precompute the non-cooperative gains (as long as matrices are constant)
     this->noncoop_gt_.computeNonCooperativeGains();
@@ -291,21 +282,13 @@ void DifferentialGT::ComputeACSAction()
     this->ref_acs_msg_.pose.orientation.w = 1.0; // Assuming no rotation for the reference
     //!----------------------------------------------------
 
+    // Compute Cooperative control gains
+    this->coop_gt_.computeCooperativeGains(this->alpha_); //! This line here also sets alpha
+    this->K_cgt_ = this->coop_gt_.getCooperativeGains();
+
     this->coop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
     this->noncoop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
 
-
-    //! If alpha is fixed this part can be precomputed-----------------------------------------------
-    // Compute control gains
-    this->coop_gt_.computeCooperativeGains(this->alpha_);
-    this->K_cgt_ = this->coop_gt_.getCooperativeGains();
-    //!-----------------------------------------------------------------------------------------------
-
-    //! As long as no matrices change here, this can be precomputed ----------------------------------
-    //? Moved inside the constructor
-    // this->noncoop_gt_.computeNonCooperativeGains();
-    // this->noncoop_gt_.getNonCooperativeGains(this->K_ncgt_h_, this->K_ncgt_a_);
-    //!-----------------------------------------------------------------------------------------------
 
     // Get the references for the cooperative and non-cooperative game
     Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
@@ -386,14 +369,6 @@ void DifferentialGT::ComputeACSAction()
         }
     }
 
-
-    // Arbitration
-
-
-    // Cone similarity arbitration
-    // this->arbitration_.ConeSimilarityFiltered(uh_real, u_cgt_h, u_cgt_a, this->decision_, this->alpha_);
-
-
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
     this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
@@ -404,8 +379,6 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
     this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
 
-
-    //! Changed Here to always be at the equilibrium
     this->wrench_ho_topub_msg_.header.stamp = this->now();
     this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
     this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
@@ -511,58 +484,101 @@ void DifferentialGT::Publish()
     this->wrench_from_acs_pub_->publish(this->wrench_from_acs_msg_);
     this->wrench_from_ho_pub_->publish(this->wrench_ho_topub_msg_);
 
-    //TODO Debugging
-    this->ref_ho_pub_->publish(this->ref_ho_msg_);
-    this->ref_acs_pub_->publish(this->ref_acs_msg_);
-    this->cos_theta_pub_->publish(this->cos_theta_msg_);
-    this->decision_pub_->publish(this->decision_msg_);
-    this->acs_cgt_wrench_pub_->publish(this->acs_cgt_wrench_msg_);
-    this->ho_cgt_wrench_pub_->publish(this->ho_cgt_wrench_msg_);
+    //? Lines are for debugging------------------------------------
+    this->ref_ho_pub_         ->publish(this->ref_ho_msg_);
+    this->ref_acs_pub_        ->publish(this->ref_acs_msg_);
+    this->cos_theta_pub_      ->publish(this->cos_theta_msg_);
+    this->decision_pub_       ->publish(this->decision_msg_);
+    this->acs_cgt_wrench_pub_ ->publish(this->acs_cgt_wrench_msg_);
+    this->ho_cgt_wrench_pub_  ->publish(this->ho_cgt_wrench_msg_);
     this->acs_ncgt_wrench_pub_->publish(this->acs_ncgt_wrench_msg_);
-    this->ho_ncgt_wrench_pub_->publish(this->ho_ncgt_wrench_msg_);
+    this->ho_ncgt_wrench_pub_ ->publish(this->ho_ncgt_wrench_msg_);
+    //?--------------------------------------------------------------
 }
 
 
 void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r)
 {
     // Compute the reference for the HO and ACS
+    Eigen::VectorXd current_state = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd ref_ho = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd ref_acs = Eigen::VectorXd::Zero(6);
     ref_h.resize(3);
     ref_r.resize(3);
 
+    current_state.segment(0,3) = this->position_;
+    ref_ho.segment(0, 3) = this->ho_ref_;
+    ref_acs.segment(0, 3) = this->acs_ref_;
+
+    //! Added line for faking the button press
+    // this->button_pressed_ = true; //! Remove absolutely--------------------------------------
+
     if (!this->button_pressed_)
     {
-        // If the button is not pressed, use the ACS reference
-        this->ho_ref_ = this->acs_ref_;
+        this->decision_ = 0;
+        this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
+        this->coop_gt_.setAlpha(this->alpha_);
+        this->coop_gt_.setPosReference(this->ho_ref_, this->acs_ref_);
+
+        Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
+        this->ho_ref_ = ref_cgt.segment(0,3);
+        this->acs_ref_ = this->ho_ref_;
+
+        ref_h << this->ho_ref_[0],
+                 this->ho_ref_[1],
+                 this->ho_ref_[2];
+
+        ref_r << this->acs_ref_[0],
+                 this->acs_ref_[1],
+                 this->acs_ref_[2];
+
         
-    }
-
-    // Compute the reference for the HO based on the admittance model
-    double dt = 1.0 / this->publishing_rate_;
-    double gamma = 1e-3;
-    Eigen::Vector3d uh(
-        this->wrench_from_ho_msg_.wrench.force.x,
-        this->wrench_from_ho_msg_.wrench.force.y,
-        this->wrench_from_ho_msg_.wrench.force.z);
-
-    this->z_ = this->F_ * this->z_ + this->G_ * uh; // Update the state z
-
-    this->ho_ref_ =  this->ho_ref_ + dt * this->z_; // Update the reference for the HO
-    ref_h << this->ho_ref_[0],
-             this->ho_ref_[1],
-             this->ho_ref_[2];
-    
-    Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
-    this->arbitration_.CosineSimilarity(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_);
-    this->alpha_ = std::max(0.01, std::min(this->cos_theta_, 0.99));
-    double epsilon = 1e-2;
-    if (diff.norm() > epsilon) 
-    {
-    // Compute the reference for the ACS based on the safety filter reading 
-    this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
     } else {
-        this->acs_ref_ = (1 - gamma) * this->acs_ref_ + gamma * ref_h; // If the difference is small, use the HO reference
-    }
-    ref_r << this->acs_ref_[0],
+
+        // Compute the reference for the HO based on the admittance model
+        double dt = 1.0 / this->publishing_rate_;
+        double gamma = 1e-3;
+        Eigen::Vector3d uh(
+            this->wrench_from_ho_msg_.wrench.force.x,
+            this->wrench_from_ho_msg_.wrench.force.y,
+            this->wrench_from_ho_msg_.wrench.force.z);
+
+        this->z_ = this->F_ * this->z_ + this->G_ * uh; // Update the state z
+
+
+        //! Not liking this part with diff being used
+        
+        Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
+        this->arbitration_.CosineSimilarity(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_);
+        
+        // Logic for initial value of alpha
+        if(this->decision_ == 0 && this->prev_decision_ == 1)
+        {
+
+            this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
+
+        } else {
+
+            // this->alpha_ = this->alpha_ + std::max(0.01, std::min(0.02 * this->cos_theta_, 0.99));
+            this->alpha_ = std::max(0.01, std::min(0.99, this->cos_theta_));
+        }
+
+        this->ho_ref_ =  this->ho_ref_ + dt * this->z_; // Update the reference for the HO
+        ref_h << this->ho_ref_[0],
+                 this->ho_ref_[1],
+                 this->ho_ref_[2];
+        double epsilon = 1e-2;
+        if (diff.norm() > epsilon) 
+        {
+        // Compute the reference for the ACS based on the safety filter reading 
+        this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
+        } else {
+            this->acs_ref_ = (1 - gamma) * this->acs_ref_ + gamma * ref_h; // If the difference is small, use the HO reference
+        }
+        ref_r << this->acs_ref_[0],
              this->acs_ref_[1],
              this->acs_ref_[2];
+
+
+    }
 }
