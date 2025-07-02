@@ -53,6 +53,7 @@ public:
   void computeCooperativeGains(const Eigen::MatrixXd& Q, const Eigen::MatrixXd& R);
   void computeNonCooperativeGains(const Eigen::MatrixXd& Q, const Eigen::MatrixXd& R, Eigen::MatrixXd& K1_ngt, Eigen::MatrixXd& K2_ngt);
   Eigen::MatrixXd getCooperativeGains();
+  double getAlphaFromCurrentState(const Eigen::VectorXd& z, const Eigen::VectorXd& ref_1, const Eigen::VectorXd& ref_2);
 
 protected:
 

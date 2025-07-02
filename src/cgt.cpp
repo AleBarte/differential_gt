@@ -187,8 +187,8 @@ void CoopGT::updateGTMatrices(const double& alpha )
 
   //* For a better understanding check the paper:
   //* Human-Robot Role Arbitration via Differential Game Theory (Franceschi et al.)
-  this->Q1_ = alpha * this->Q11_ + (1-alpha) * this->Q21_;
-  this->Q2_ = alpha * this->Q12_ + (1-alpha) * this->Q22_;
+  this->Q1_ = alpha * this->Q11_ + (1-alpha) * this->Q12_;
+  this->Q2_ = alpha * this->Q21_ + (1-alpha) * this->Q22_;
   
   this->Q_gt_ = this->Q1_ + this->Q2_;
 
@@ -318,9 +318,33 @@ Eigen::VectorXd CoopGT::computeControlInputs()
   return control;
 }
 
+//------------------------------------------------------------
+// Get Alpha from current state
+double CoopGT::getAlphaFromCurrentState(const Eigen::VectorXd& z, const Eigen::VectorXd& ref_1, const Eigen::VectorXd& ref_2)
+{
+  // Compute Qa and Qb
+  Eigen::MatrixXd Qa = this->Q11_ + this->Q12_;
+  Eigen::MatrixXd Qb = this->Q21_ + this->Q22_;
+
+  // Compute the the parts composing alpha * x - b = 0
+  Eigen::VectorXd x = (Qa - Qb) * z + (this->Q12_ - this->Q11_) * ref_1 + (this->Q22_ - this->Q21_) * ref_2;
+  Eigen::VectorXd b = -Qb * z + this->Q12_ * ref_1 + this->Q22_ * ref_2;
+
+  // Solve minimizing ||alpha * x - b ||^2
+
+  double h = x.dot(x);
+  double alpha = b.dot(x) / (h + 1e-5); //Included a small regularization eps
+
+  // Clamp alpha
+  alpha = std::max(0.01, std::min(0.99, alpha));
+
+  return alpha;
+
+}
+
 
 //-----------------------------------------------------------
-// Step the system
+// Step the system (Methods used for simulation purposes)
 Eigen::VectorXd CoopGT::step(const Eigen::VectorXd& x, const Eigen::VectorXd& ref_1, const Eigen::VectorXd& ref_2)
 {
   if (x.size() != 2 * this->n_dofs_)
@@ -357,6 +381,7 @@ Eigen::VectorXd CoopGT::step(const Eigen::VectorXd& ref_1, const Eigen::VectorXd
 {
   return this->step(this->X_, ref_1, ref_2);
 }
+
 
 //*-------------------------*//
 //*--- Protected Methods ---*//
