@@ -53,6 +53,7 @@ void Arbitration::CosineSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, dou
     }
 }
 
+// Vector3d version
 void Arbitration::CosineSimilarity(Eigen::Vector3d& v1, Eigen::Vector3d& v2, double& cos_theta, int& decision)
 {
     // Calculate the cosine of the angle between the two vectors
