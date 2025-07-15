@@ -50,9 +50,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->twist_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
         this->twist_topic_, 10, std::bind(&DifferentialGT::TwistCallback, this, std::placeholders::_1));
 
-    this->desired_ee_vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-        "/twist_cmds", 10, std::bind(&DifferentialGT::DesiredEEVelCallback, this, std::placeholders::_1));
-
     this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
         "/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
 
@@ -170,17 +167,6 @@ bool DifferentialGT::Startup()
     return true;
 }
 
-//---------------------------------------------------
-// Desired End Effector Velocity callback
-void DifferentialGT::DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
-{
-    if (!this->is_initialized_)
-        return;
-
-    this->desired_ee_vel_[0] = msg->twist.linear.x;
-    this->desired_ee_vel_[1] = msg->twist.linear.y;
-    this->desired_ee_vel_[2] = msg->twist.linear.z;
-}
 
 //----------------------------------------------------
 // ButtonsCallback
@@ -369,6 +355,11 @@ void DifferentialGT::ComputeACSAction()
         }
     }
 
+    // ARBITRATION -------------------
+    // Select Game
+    // Select alpha 
+    //________________________________
+
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
     this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
@@ -537,7 +528,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         // Compute the reference for the HO based on the admittance model
         double dt = 1.0 / this->publishing_rate_;
-        double gamma = 1e-3;
+        double gamma = 1e-2;
         Eigen::Vector3d uh(
             this->wrench_from_ho_msg_.wrench.force.x,
             this->wrench_from_ho_msg_.wrench.force.y,
@@ -547,38 +538,43 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
 
         //! Not liking this part with diff being used
-        
-        Eigen::Vector3d diff = this->z_ - this->twist_from_safety_filter_;
-        this->arbitration_.CosineSimilarity(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_);
-        
+        this->arbitration_.CosineSimilarityHysteresis(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_, 0.8, 0.2);
+        Eigen::VectorXd diff = this->ho_ref_ - this->acs_ref_;
+
+        if (diff.norm() > 0.05)
+        {
+            this->decision_ = 1;
+        }
+
         // Logic for initial value of alpha
         if(this->decision_ == 0 && this->prev_decision_ == 1)
         {
-
             this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
 
         } else {
 
-            // this->alpha_ = this->alpha_ + std::max(0.01, std::min(0.02 * this->cos_theta_, 0.99));
-            this->alpha_ = std::max(0.01, std::min(0.99, this->cos_theta_));
+            this->alpha_ = (1.0 + this->cos_theta_) / 2 * (1.0 - diff.norm() / 0.05);
+            this->alpha_ = std::max(0.01, std::min(0.99, this->alpha_));
         }
 
-        this->ho_ref_ =  this->ho_ref_ + dt * this->z_; // Update the reference for the HO
+
+        // Compute the reference for the ACS based on the safety filter reading 
+        this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
+
+        if (this->decision_ == 1) {
+            Eigen::MatrixXd K = 1.0 * Eigen::MatrixXd::Identity(3, 3);
+            this->z_ = - K * (this->ho_ref_ - this->acs_ref_); //! State of filter is recomputed accordingly here. This may influence the cosine similarity
+        }
+        this->ho_ref_ = this->ho_ref_ + dt * this->z_;
+        ref_r << this->acs_ref_[0],
+                 this->acs_ref_[1],
+                 this->acs_ref_[2];
+
+        
         ref_h << this->ho_ref_[0],
                  this->ho_ref_[1],
                  this->ho_ref_[2];
-        double epsilon = 1e-2;
-        if (diff.norm() > epsilon) 
-        {
-        // Compute the reference for the ACS based on the safety filter reading 
-        this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
-        } else {
-            this->acs_ref_ = (1 - gamma) * this->acs_ref_ + gamma * ref_h; // If the difference is small, use the HO reference
-        }
-        ref_r << this->acs_ref_[0],
-             this->acs_ref_[1],
-             this->acs_ref_[2];
 
-
+        this->prev_decision_ = this->decision_;
     }
 }

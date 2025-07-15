@@ -11,7 +11,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"                 // For Twist messages
 #include "std_msgs/msg/float64_multi_array.hpp"                // For Float64MultiArray messages
-#include "std_msgs/msg/int32.hpp"                            // For Int32 messages
+#include "std_msgs/msg/int32.hpp"                              // For Int32 messages
 #include "sensor_msgs/msg/joy.hpp"                             // For joystick input
 #include <tf2_ros/transform_listener.h>                        // TF2 Transform listener
 #include <tf2_ros/buffer.h>                                    // TF2 Buffer
@@ -28,69 +28,61 @@ private:
     bool Startup();
 
     // Callbacks
-    void WrenchFromHOCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg);
-    
-    void PoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void WrenchFromHOCallback(const geometry_msgs::msg::WrenchStamped::SharedPtr msg);          // Takes the force from the joystick and stores it for later use
+    void PoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);                    // Takes the pose of the robot End-Effector and stores it for later use
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
-    void DesiredEEVelCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg); //TODO: Remove this
-    void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
-    void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg); // For joystick input, if needed
+    void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);  // Takes a twist from a Safety Filter and stores it for later use (Marco you don't care about this)
+    void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
     
     // Functions
-    void SetSystemMatrices();
-    void SetCostMatrices();
-    void Publish();
-    void ComputeACSAction();
+    void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
+    void SetCostMatrices();     // Sets the various cost matrices for CGT and NCGT
+    void Publish();             // Calls all the publishers to publish respective messages
+    void ComputeACSAction();    // Computes the Automatic Control System Action
 
-    //TODO Maybe reomove -----------------
-    // void ComputeTrajectories();
-    // void ComputeLinearTrajectory();
-    //TODO---------------------------------
     
-    void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r);
+    void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r); //Computes references for HO and ACS (Marco you can change this function)
 
 
     // Publishers
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_;
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
     
 
     // Subscribers
-    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr desired_ee_vel_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;
-    rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_; // For joystick input, if needed
+    rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;             // Subscribes to the force commanded by the joystick
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;                         // Subscribes to the robot end effector pose
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;                       // Subscribes to the robot end effector twist
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;    // Subscribes to twist from safety filter (Marco you can delete this or discard it)
+    rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
 
     // Messages to save data from subscribers
-    geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;
-    Eigen::Vector3d position_;
-    Eigen::Matrix3d orientation_;
-    Eigen::Vector3d linear_velocity_ = Eigen::Vector3d::Zero(); // Initialize linear velocity to zero
-    Eigen::Vector3d desired_ee_vel_ = Eigen::Vector3d::Zero();
-    Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero(); // Initialize twist from safety filter to zero
+    geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
+    Eigen::Vector3d position_;                                                                          // End Effector (EE) Position [m]
+    Eigen::Matrix3d orientation_;                                                                       // End Effector (EE) Orientation (Rotation Matrix)
+    Eigen::Vector3d linear_velocity_ = Eigen::Vector3d::Zero();                                         // Initialize EE linear velocity to zero [m/s]
+    Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero();                                // Initialize twist from safety filter to zero [m/s] (Marco can discard)
 
     // Messages to publish
-    geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_;
-    geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_;
+    geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
+    geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_; // HO wrench to be aplied to robot EE [N] and [Nm]
     
 
     // Game Theory Objects
-    CoopGT coop_gt_; 
-    NonCoopGT noncoop_gt_;
+    CoopGT coop_gt_;        // CGT
+    NonCoopGT noncoop_gt_;  // NCGT
 
     // Arbitration Object
     Arbitration arbitration_;
 
-    // Arbitration level
+    // Arbitration level and other variables (Note this code is WIP, these may or may not be used)
     double alpha_;
     int cosine_similarity_counter_ = 0;
-    int decision_ = 0; // Decision made by the arbitration
+    int decision_ = 0;                      // Decision made by the arbitration
     int prev_decision_ = 0;
-    double cos_theta_ = 0.0; // Cosine similarity value
-    double cos_theta_coop_ = 0.0; // Cosine similarity value for cooperative action
-    double cos_theta_nc_ = 0.0; // Cosine similarity value for non
+    double cos_theta_ = 0.0;                // Cosine similarity value
+    double cos_theta_coop_ = 0.0;           // Cosine similarity value for cooperative action
+    double cos_theta_nc_ = 0.0;             // Cosine similarity value for non-cooperative action
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;
@@ -107,31 +99,32 @@ private:
     Eigen::MatrixXd Rrh_;
 
     // System Matrices
-    Eigen::MatrixXd A_; // System matrix for cooperative GT
-    Eigen::MatrixXd B_; // Input matrix for cooperative GT
-    Eigen::MatrixXd F_;
-    Eigen::MatrixXd G_; 
+    Eigen::MatrixXd A_; // System matrix 
+    Eigen::MatrixXd B_; // Input matrix
+    
+    // Safety Filter (Marco you can delete or ignore)
+    Eigen::MatrixXd F_; // System matrix
+    Eigen::MatrixXd G_; // Input Matrix
+    Eigen::Vector3d z_; // State of the filter
 
-    Eigen::Vector3d z_;
-
-    // Gains of the controllers
+    // Gains of the controllers (CGT & NCGT)
     Eigen::MatrixXd K_cgt_;
     Eigen::MatrixXd K_ncgt_a_;
     Eigen::MatrixXd K_ncgt_h_;
 
 
     // Parameters
-    std::string ho_wrench_topic_;
-    std::string acs_wrench_pub_topic_;
-    std::string pose_topic_;
-    std::string twist_topic_;
-    std::string ho_wrench_pub_topic_;
-    std::string base_frame_; // Base frame for the robot, can be set as a parameter
-    std::string end_effector_;
-    double switch_on_point_;
-    double switch_off_point_;
-    double publishing_rate_; // Default publishing rate in seconds
-    bool override_ho_wrench_; // Flag to override the HO wrench with ACS action
+    std::string ho_wrench_topic_;           // Topic from which the HO wrench is read
+    std::string acs_wrench_pub_topic_;      // Topic on which the ACS wrench is published
+    std::string pose_topic_;                // Topic from which EE pose is read
+    std::string twist_topic_;               // Topic from which EE twist is read
+    std::string ho_wrench_pub_topic_;       // Topic on which the HO wrench is published
+    std::string base_frame_;                // Base frame for the robot, can be set as a parameter
+    std::string end_effector_;              // End-effector frame for the robot, can be set as a paraeter
+    double switch_on_point_;                // Switch on point for Cosine Similarity Hysteresis
+    double switch_off_point_;               // Switch off point for Cosien Similarity Hysteresis
+    double publishing_rate_;                // Default publishing rate in seconds
+    bool override_ho_wrench_;               // Flag to override the HO wrench with ACS action
 
 
     // TF2
@@ -143,21 +136,16 @@ private:
 
     // Flags
     bool is_initialized_ = false; // Flag to check if the node is initialized
-    bool button_pressed_ = false; 
+    bool button_pressed_ = false; // Flag to check whether a button is pressed or not
 
     // Debugging
     Eigen::Vector3d initial_position_; // Initial position of the end effector
 
-    //TODO: Remove. These are to test marco experiment
-    // int traj_index_ = 0; // Index of the current trajectory
-    // Eigen::MatrixXd ho_ref_;
-    // Eigen::MatrixXd acs_ref_;
-    //TODO --------------------------------------------------
 
     Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
     Eigen::VectorXd ho_ref_; // Reference trajectory for the HO
 
-    //TODO Remove debugging
+    //? Debugging ------------------------------------------------------------------------
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_ho_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_acs_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr cos_theta_pub_;
@@ -175,6 +163,7 @@ private:
     geometry_msgs::msg::WrenchStamped acs_cgt_wrench_msg_;
     std_msgs::msg::Float64MultiArray cos_theta_msg_;
     std_msgs::msg::Int32 decision_msg_;
+    //?------------------------------------------------------------------------------------
 
 
 };
