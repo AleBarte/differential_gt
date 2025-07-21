@@ -42,6 +42,7 @@ private:
 
     
     void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r); //Computes references for HO and ACS (Marco you can change this function)
+    Eigen::VectorXd ComputeRepulsiveForce(const Eigen::VectorXd &obsatcle, const double &radius);
 
 
     // Publishers
@@ -58,9 +59,9 @@ private:
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
-    Eigen::Vector3d position_;                                                                          // End Effector (EE) Position [m]
+    Eigen::VectorXd position_;                                                                          // End Effector (EE) Position [m]
     Eigen::Matrix3d orientation_;                                                                       // End Effector (EE) Orientation (Rotation Matrix)
-    Eigen::Vector3d linear_velocity_ = Eigen::Vector3d::Zero();                                         // Initialize EE linear velocity to zero [m/s]
+    Eigen::VectorXd linear_velocity_ = Eigen::VectorXd::Zero(3);                                         // Initialize EE linear velocity to zero [m/s]
     Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero();                                // Initialize twist from safety filter to zero [m/s] (Marco can discard)
 
     // Messages to publish
@@ -138,6 +139,8 @@ private:
     bool is_initialized_ = false; // Flag to check if the node is initialized
     bool button_pressed_ = false; // Flag to check whether a button is pressed or not
 
+    double stored_energy_ = 0.0;
+
     // Debugging
     Eigen::Vector3d initial_position_; // Initial position of the end effector
 
@@ -154,6 +157,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr ho_cgt_wrench_pub_;
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr acs_cgt_wrench_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr decision_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr tank_level_pub_;
 
     geometry_msgs::msg::PoseStamped ref_ho_msg_;
     geometry_msgs::msg::PoseStamped ref_acs_msg_;
@@ -163,6 +167,7 @@ private:
     geometry_msgs::msg::WrenchStamped acs_cgt_wrench_msg_;
     std_msgs::msg::Float64MultiArray cos_theta_msg_;
     std_msgs::msg::Int32 decision_msg_;
+    std_msgs::msg::Float64MultiArray tank_level_msg_;
     //?------------------------------------------------------------------------------------
 
 

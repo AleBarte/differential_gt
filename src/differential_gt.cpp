@@ -22,7 +22,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("switch_on_point", 0.71);
     this->declare_parameter<double>("switch_off_point", 0.0);
     this->declare_parameter<double>("publishing_rate", 500.0);
-    this->declare_parameter<bool>("override_ho_wrench", false);
+    this->declare_parameter<bool>("override_ho_wrench", true); //! Attention, try also with false, see what changes
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
@@ -79,9 +79,11 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     //* Set initial value of alpha for arbitration
     this->alpha_ = 0.9; // Default value, can be changed later
     this->coop_gt_.setAlpha(this->alpha_);
+
     
     // Setup game theory objects with cost matrices
     this->coop_gt_.setCostsParams(this->Qhh_, this->Qhr_, this->Qrh_, this->Qrr_, this->Rh_, this->Rr_);
+    std::cout << "Setting up Cooperative Game Theory with matrices:" << std::endl;
 
     //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
     this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
@@ -106,11 +108,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         rclcpp::shutdown();
     }
 
-    //TODO: Remove, Just for marco experiment
-    // this->ComputeTrajectories();
-    // this->ComputeLinearTrajectory();
-    //TODO ----------------------------------
-
     // Initialization concluded
     this->is_initialized_ = true;
 
@@ -123,10 +120,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->acs_ncgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/acs_nc_wrench", 10);
     this->ho_cgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/ho_coop_wrench", 10);
     this->acs_cgt_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/acs_coop_wrench", 10);
+    this->tank_level_pub_ = this->create_publisher<std_msgs::msg::Float64MultiArray>("/differential_gt/tank_level", 10);
 
     this->cos_theta_msg_.data.resize(2);
 
     this->cosine_similarity_counter_ = 0;
+    this->prev_decision_ = 0;
 
 }
 
@@ -137,7 +136,7 @@ bool DifferentialGT::Startup()
     try {
         geometry_msgs::msg::TransformStamped start_transform = this->tf_buffer_.lookupTransform(this->base_frame_, this->end_effector_, 
         tf2::TimePointZero, tf2::durationFromSec(5.0));
-
+        this->position_.resize(3);
         // Set initial position
         this->position_[0] = start_transform.transform.translation.x;
         this->position_[1] = start_transform.transform.translation.y;
@@ -248,8 +247,8 @@ void DifferentialGT::ComputeACSAction()
     ref_h.resize(3);
     ref_r.resize(3);
 
-
     this->ComputeReferences(ref_h, ref_r);
+
 
 
     //! These lines are for debugging --------------------
@@ -355,9 +354,26 @@ void DifferentialGT::ComputeACSAction()
         }
     }
 
+    //TODO: Matrix tuning
+    // Eigen::MatrixXd damping = Eigen::MatrixXd::Identity(3, 3) * 50.0; // Damping matrix  //TODO Find matrix with equivalent effect for NCGT
+    // Eigen::VectorXd damping_action = - damping * this->linear_velocity_; // Damping action
+
+    // if (this->decision_ == 0)
+    // {
+    //     damping_action = Eigen::VectorXd::Zero(3); // No damping action in cooperative game
+    //     // this->stored_energy_ = 0.7 * this->stored_energy_; // Reduce the stored energy in cooperative game
+    // }
+
+    double ct = std::max(0.0, std::min(1.0, this->cos_theta_));
+    double neg_cosine = std::min(0.0, this->cos_theta_);
+    this->stored_energy_ = (1.0 - ct) * this->stored_energy_ - neg_cosine; // Energy dissipated by the damping action
+    this->stored_energy_ = std::max(0.0, std::min(10.0, this->stored_energy_)); // Ensure stored energy is non-negative
+
+
     // ARBITRATION -------------------
     // Select Game
-    // Select alpha 
+    // Select alpha
+    
     //________________________________
 
     // Create the WrenchStamped message to publish
@@ -378,6 +394,13 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
     this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
     this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+
+    //? Debugging --------------------------
+
+    this->tank_level_msg_.data.clear();
+    this->tank_level_msg_.data.push_back(this->stored_energy_);
+
+    //? ------------------------------------
 
 }
 
@@ -473,7 +496,7 @@ void DifferentialGT::Publish()
     // Compute the ACS action
     this->ComputeACSAction();
     this->wrench_from_acs_pub_->publish(this->wrench_from_acs_msg_);
-    this->wrench_from_ho_pub_->publish(this->wrench_ho_topub_msg_);
+    this->wrench_from_ho_pub_ ->publish(this->wrench_ho_topub_msg_);
 
     //? Lines are for debugging------------------------------------
     this->ref_ho_pub_         ->publish(this->ref_ho_msg_);
@@ -484,6 +507,7 @@ void DifferentialGT::Publish()
     this->ho_cgt_wrench_pub_  ->publish(this->ho_cgt_wrench_msg_);
     this->acs_ncgt_wrench_pub_->publish(this->acs_ncgt_wrench_msg_);
     this->ho_ncgt_wrench_pub_ ->publish(this->ho_ncgt_wrench_msg_);
+    this->tank_level_pub_     ->publish(this->tank_level_msg_);
     //?--------------------------------------------------------------
 }
 
@@ -500,6 +524,15 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     current_state.segment(0,3) = this->position_;
     ref_ho.segment(0, 3) = this->ho_ref_;
     ref_acs.segment(0, 3) = this->acs_ref_;
+
+    // Introduce a Goal and an Obstacle
+    //! Warning: Hardcoded values -----------------------------------------------------------------
+    Eigen::VectorXd goal(3);
+    Eigen::VectorXd obstacle(3);
+    goal << 0.40, 0.49, 0.3;
+    obstacle << 0.11, 0.49, 0.1; // This is the obstacle position, can be set as a parameter
+    double obstacle_radius = 0.2; // Radius of the obstacle, can be set as a parameter
+    //!--------------------------------------------------------------------------------------------
 
     //! Added line for faking the button press
     // this->button_pressed_ = true; //! Remove absolutely--------------------------------------
@@ -528,7 +561,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         // Compute the reference for the HO based on the admittance model
         double dt = 1.0 / this->publishing_rate_;
-        double gamma = 1e-2;
+        double gamma = 5.0;
         Eigen::Vector3d uh(
             this->wrench_from_ho_msg_.wrench.force.x,
             this->wrench_from_ho_msg_.wrench.force.y,
@@ -536,36 +569,38 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         this->z_ = this->F_ * this->z_ + this->G_ * uh; // Update the state z
 
+        // Compute the reference for the ACS based on the goal position
+        Eigen::MatrixXd K = Eigen::MatrixXd::Identity(3, 3) * gamma;
+        Eigen::MatrixXd K_obstacle = Eigen::MatrixXd::Identity(3, 3) * 0.01; // Repulsive force gain
+        Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(obstacle, obstacle_radius); 
+        this->acs_ref_ = this->position_ +  K * (goal - this->position_) * dt + K_obstacle * repulsive_force; // Update the ACS reference (Here I will need to sum the effect of the backoff caused by the potential)
 
-        //! Not liking this part with diff being used
-        this->arbitration_.CosineSimilarityHysteresis(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_, 0.8, 0.2);
-        Eigen::VectorXd diff = this->ho_ref_ - this->acs_ref_;
+        this->ho_ref_ = this->ho_ref_ + dt * this->z_;
 
-        if (diff.norm() > 0.05)
+        // Compute the energy dissipated
+        double delta_energy = repulsive_force.dot(this->linear_velocity_) * dt;
+
+        if (delta_energy > 1e-6)
+            this->stored_energy_ = this->stored_energy_ + delta_energy;
+
+        // Arbitrate (Could write better)
+        Eigen::VectorXd u_h(3);
+        u_h << this->wrench_from_ho_msg_.wrench.force.x,
+                this->wrench_from_ho_msg_.wrench.force.y,
+                this->wrench_from_ho_msg_.wrench.force.z;
+        
+        int placeholder;
+        Eigen::VectorXd delta = this->acs_ref_ - this->position_;
+        this->arbitration_.CosineSimilarity(u_h, delta, this->cos_theta_, placeholder);
+        this->alpha_ = std::max(0.01, std::min(0.99, this->cos_theta_));
+
+        if (this->stored_energy_ > 0.05)
         {
             this->decision_ = 1;
+        }else{
+            this->decision_ = 0;
         }
 
-        // Logic for initial value of alpha
-        if(this->decision_ == 0 && this->prev_decision_ == 1)
-        {
-            this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
-
-        } else {
-
-            this->alpha_ = (1.0 + this->cos_theta_) / 2 * (1.0 - diff.norm() / 0.05);
-            this->alpha_ = std::max(0.01, std::min(0.99, this->alpha_));
-        }
-
-
-        // Compute the reference for the ACS based on the safety filter reading 
-        this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
-
-        if (this->decision_ == 1) {
-            Eigen::MatrixXd K = 1.0 * Eigen::MatrixXd::Identity(3, 3);
-            this->z_ = - K * (this->ho_ref_ - this->acs_ref_); //! State of filter is recomputed accordingly here. This may influence the cosine similarity
-        }
-        this->ho_ref_ = this->ho_ref_ + dt * this->z_;
         ref_r << this->acs_ref_[0],
                  this->acs_ref_[1],
                  this->acs_ref_[2];
@@ -574,7 +609,25 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         ref_h << this->ho_ref_[0],
                  this->ho_ref_[1],
                  this->ho_ref_[2];
-
-        this->prev_decision_ = this->decision_;
     }
+}
+
+Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const Eigen::VectorXd &obstacle, const double &radius)
+{
+    Eigen::VectorXd force(3);
+    force.setZero();
+
+    double eta = 1.0;
+
+    // Compute the distance to the obstacle
+    Eigen::VectorXd diff = this->position_ - obstacle;
+    double distance = diff.norm();
+
+    // If within the radius, compute the repulsive force
+    if (distance < radius)
+    {
+        force =  eta * (1.0 / distance - 1.0 / radius) * diff / std::pow(distance, 3);
+    }
+
+    return force;
 }
