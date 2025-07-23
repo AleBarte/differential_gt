@@ -30,6 +30,7 @@ add_executable(differential_gt_node src/dgt_node.cpp
 add_executable(differential_gt 
               src/differential_gt_main.cpp
               src/differential_gt.cpp
+              src/utils.cpp
 )
 
 target_link_libraries(differential_gt_node gt_lib)
