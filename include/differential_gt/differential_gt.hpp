@@ -5,6 +5,7 @@
 #include "../include/differential_gt/cgt.hpp"
 #include "../include/differential_gt/ncgt.hpp"
 #include "../include/differential_gt/arbitration.hpp"
+#include "../include/differential_gt/utils.hpp"
 #include <eigen3/Eigen/Dense>
 #include <chrono>
 #include "geometry_msgs/msg/wrench_stamped.hpp"
@@ -48,6 +49,7 @@ private:
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_wrench_pub_; // Publisher for the feedback wrench (force feedback to joystick)
     
 
     // Subscribers
@@ -67,6 +69,7 @@ private:
     // Messages to publish
     geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
     geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_; // HO wrench to be aplied to robot EE [N] and [Nm]
+    geometry_msgs::msg::WrenchStamped feedback_wrench_msg_; // Feedback wrench to be applied to joystick [N] and [Nm]
     
 
     // Game Theory Objects
@@ -126,6 +129,8 @@ private:
     double switch_off_point_;               // Switch off point for Cosien Similarity Hysteresis
     double publishing_rate_;                // Default publishing rate in seconds
     bool override_ho_wrench_;               // Flag to override the HO wrench with ACS action
+    std::string save_matrices_;             // Flag to save matrices to a file
+    std::string load_matrices_;
 
 
     // TF2
@@ -138,6 +143,7 @@ private:
     // Flags
     bool is_initialized_ = false; // Flag to check if the node is initialized
     bool button_pressed_ = false; // Flag to check whether a button is pressed or not
+    bool potential_active_ = false; // Flag to check if the potential is active
 
     double stored_energy_ = 0.0;
 
