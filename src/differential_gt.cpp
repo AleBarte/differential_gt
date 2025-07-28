@@ -22,8 +22,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("switch_on_point", 0.71);
     this->declare_parameter<double>("switch_off_point", 0.0);
     this->declare_parameter<double>("publishing_rate", 500.0);
-    this->declare_parameter<bool>("override_ho_wrench", false); //! Attention, try also with false, see what changes
-    this->declare_parameter<std::string>("save_matrices", ""); // Flag to save matrices to a file
+    this->declare_parameter<bool>("override_ho_wrench", false); 
+    this->declare_parameter<std::string>("save_matrices", ""); 
     this->declare_parameter<std::string>("load_matrices", "");
 
     // Get parameters
@@ -59,7 +59,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         "/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
 
     this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
-        "/sigma0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1)); //! Changed for sigma
+        "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
      
 
     // Arbitration
@@ -402,9 +402,9 @@ void DifferentialGT::ComputeACSAction()
 
     if (!this->potential_active_)
     {
-        this->feedback_wrench_msg_.wrench.force.x = 0.2 * acs_action[0];
-        this->feedback_wrench_msg_.wrench.force.y = 0.2 * acs_action[1];
-        this->feedback_wrench_msg_.wrench.force.z = 0.2 * acs_action[2];
+        this->feedback_wrench_msg_.wrench.force.x = acs_action[0];
+        this->feedback_wrench_msg_.wrench.force.y = acs_action[1];
+        this->feedback_wrench_msg_.wrench.force.z = acs_action[2];
         this->feedback_wrench_msg_.wrench.torque.x = 0.0;
         this->feedback_wrench_msg_.wrench.torque.y = 0.0;
         this->feedback_wrench_msg_.wrench.torque.z = 0.0;
@@ -500,7 +500,7 @@ void DifferentialGT::SetCostMatrices()
 
         this->Qrr_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
-        this->Qhr_.block(0, 0, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
+        this->Qhr_.block(0, 0, 3, 3) = 1e-1 * Eigen::Matrix3d::Identity();
         this->Qhr_.block(3, 3, 3, 3) = Eigen::Matrix3d::Zero();
 
         this->Rh_ = 5e-4 * Eigen::Matrix3d::Identity();
@@ -518,9 +518,10 @@ void DifferentialGT::SetCostMatrices()
 
         //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
         this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
-        
-        this->Qr_ = 30.0 * this->Qr_; // Scale the Qr matrix for non-cooperative game theory
+        std::cout << "Here"<<std::endl;
+        // this->Qr_ = 30.0 * this->Qr_; // Scale the Qr matrix for non-cooperative game theory
         this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_, this->Rhh_, this->Rrr_, this->Rhr_, this->Rrh_);
+        std::cout << "Setting up Non-Cooperative Game Theory with matrices:" << std::endl;
         //!--------------------------------------------------------------------------------
     } else {
         // Load matrices from a file
@@ -601,16 +602,32 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     ref_r.resize(3);
 
     current_state.segment(0,3) = this->position_;
-    ref_ho.segment(0, 3) = this->ho_ref_;
-    ref_acs.segment(0, 3) = this->acs_ref_;
+    ref_ho.segment(0, 3)       = this->ho_ref_;
+    ref_acs.segment(0, 3)      = this->acs_ref_;
 
     // Introduce a Goal and an Obstacle
     //! Warning: Hardcoded values -----------------------------------------------------------------
     Eigen::VectorXd goal(3);
+    Eigen::VectorXd goal1(3);
+    Eigen::VectorXd goal2(3);
     Eigen::VectorXd obstacle(3);
-    goal << 0.40, 0.49, 0.3;
+    Eigen::VectorXd obstacle2(3);
+
+    std::vector<Eigen::VectorXd> obstacle_vec;
+    std::vector<double> obstacle_radius_vec;
+    std::vector<Eigen::VectorXd> goal_vec;
+    goal1 << 0.40, 0.49, 0.3;
+    goal2 << 0.11, 0.64, 0.1; // This is the second goal position, can be set as a parameter
+
     obstacle << 0.11, 0.49, 0.1; // This is the obstacle position, can be set as a parameter
+    obstacle2 << 0.11, 0.79, 0.1; // This is the second obstacle position, can be set as a parameter
+
+    obstacle_vec = {obstacle, obstacle2}; // Vector of obstacles, can be extended with more obstacles
+    goal_vec = {goal1, goal2};
+
     double obstacle_radius = 0.2; // Radius of the obstacle, can be set as a parameter
+    double obstacle_radius2 = 0.2; // Radius of the second obstacle, can be set as a parameter
+    obstacle_radius_vec = {obstacle_radius, obstacle_radius2};
     //!--------------------------------------------------------------------------------------------
 
     //! Added line for faking the button press
@@ -619,12 +636,13 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     if (!this->button_pressed_)
     {
         this->decision_ = 0;
-        this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
+        // this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
+        this->alpha_ = 0.9; 
         this->coop_gt_.setAlpha(this->alpha_);
         this->coop_gt_.setPosReference(this->ho_ref_, this->acs_ref_);
 
         Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
-        this->ho_ref_ = ref_cgt.segment(0,3);
+        this->ho_ref_ = this->position_;
         this->acs_ref_ = this->ho_ref_;
 
         ref_h << this->ho_ref_[0],
@@ -634,13 +652,12 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         ref_r << this->acs_ref_[0],
                  this->acs_ref_[1],
                  this->acs_ref_[2];
-
         
     } else {
 
         // Compute the reference for the HO based on the admittance model
         double dt = 1.0 / this->publishing_rate_;
-        double gamma = 5.0;
+        double gamma = 0.01;
         Eigen::Vector3d uh(
             this->wrench_from_ho_msg_.wrench.force.x,
             this->wrench_from_ho_msg_.wrench.force.y,
@@ -651,9 +668,11 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         // Compute the reference for the ACS based on the goal position
         Eigen::MatrixXd K = Eigen::MatrixXd::Identity(3, 3) * gamma;
         Eigen::MatrixXd K_obstacle = Eigen::MatrixXd::Identity(3, 3) * 0.01; // Repulsive force gain
-        Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(obstacle, obstacle_radius);
+        Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(obstacle_vec, obstacle_radius_vec);
+        // Select most likely goal
+        goal = this->SelectGoal(goal_vec, uh);
         Eigen::VectorXd goal_diff = goal - this->position_;
-        Eigen::VectorXd attractive_force = K * goal_diff * dt; 
+        Eigen::VectorXd attractive_force = K * goal_diff; 
         this->acs_ref_ = this->position_ +  attractive_force + K_obstacle * repulsive_force; // Update the ACS reference (Here I will need to sum the effect of the backoff caused by the potential)
         
         if (goal_diff.norm() < 0.05) // If close to the goal, stop
@@ -721,10 +740,57 @@ Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const Eigen::VectorXd &obs
     if (distance < radius)
     {
         force =  eta * (1.0 / distance - 1.0 / radius) * diff / std::pow(distance, 3);
-        this->potential_active_ = true; // Set the potential active flag
-    } else {
-        this->potential_active_ = false; // Reset the potential active flag
     }
 
     return force;
+}
+
+Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const std::vector<Eigen::VectorXd> &obstacles, const std::vector<double> &radii)
+{
+    Eigen::VectorXd total_force(3);
+    Eigen::MatrixXd D = 5.0 * Eigen::MatrixXd::Identity(3,3);
+    total_force.setZero();
+
+    for (size_t i = 0; i < obstacles.size(); ++i)
+    {
+        Eigen::VectorXd force = this->ComputeRepulsiveForce(obstacles[i], radii[i]);
+        total_force += force;
+    }
+
+    if (total_force.norm() > 0.0)
+    {
+        this->potential_active_ = true; // Set the potential active flag if any force is computed
+    } else {
+        this->potential_active_ = false; // Reset the potential active flag if no force is computed
+    }
+    total_force = total_force - D* this->linear_velocity_; // Damping effect on the repulsive force
+    return total_force;
+}
+
+//----------------------------------------------------
+// Select Goal
+
+Eigen::VectorXd DifferentialGT::SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd& uh)
+{
+    double sum = 0.0;
+    Eigen::VectorXd w(goals.size());
+    Eigen::VectorXd goal_dist(3);
+
+    if (uh.norm() < 1e-6)
+    {
+        return this->position_;
+    }
+
+    for (int i = 0; i < goals.size(); i++)
+    {
+        goal_dist = goals[i] - this->position_;
+        sum += std::exp(-goal_dist.norm());
+        w[i] = std::exp(-goal_dist.norm());
+    }
+    w /= sum;
+
+    int max_index;
+    w.maxCoeff(&max_index); // Get the index of the maximum value in w
+
+    return goals[max_index]; // Return the goal with the maximum weight
 }

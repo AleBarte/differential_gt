@@ -44,6 +44,8 @@ private:
     
     void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r); //Computes references for HO and ACS (Marco you can change this function)
     Eigen::VectorXd ComputeRepulsiveForce(const Eigen::VectorXd &obsatcle, const double &radius);
+    Eigen::VectorXd ComputeRepulsiveForce(const std::vector<Eigen::VectorXd> &obstacles, const std::vector<double> &radii);
+    Eigen::VectorXd SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd &uh);
 
 
     // Publishers
