@@ -45,11 +45,11 @@ void Arbitration::CosineSimilarity(Eigen::VectorXd& v1, Eigen::VectorXd& v2, dou
     // Check if the cosine value is below a certain threshold
     if (cos_theta > this->cosine_similarity_threshold_)
     {
-        decision = 0; // Decision 1
+        decision = 0; // cooperative
     }
     else
     {
-        decision = 1; // Decision 0
+        decision = 1; // non-cooperative
     }
 }
 

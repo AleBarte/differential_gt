@@ -56,6 +56,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
     
+        this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
 
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
@@ -77,7 +79,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->noncoop_gt_.setSysParams(this->A_, this->B_);
 
     //* Set initial value of alpha for arbitration
-    this->alpha_ = 0.9; // Default value, can be changed later
+    this->alpha_ = 0.01; // Default value, can be changed later
     this->coop_gt_.setAlpha(this->alpha_);
     
     // Setup game theory objects with cost matrices
@@ -239,6 +241,20 @@ void DifferentialGT::TwistFromSafetyFilterCallback(const geometry_msgs::msg::Twi
     this->twist_from_safety_filter_[2] = msg->twist.linear.z;
 }
 
+//----------------------------------------------------
+// ACSReferencePointCallback
+void DifferentialGT::ACSReferencePointCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+    {
+        return;
+    }
+
+    this->acs_ref_[0] = msg->pose.position.x;
+    this->acs_ref_[1] = msg->pose.position.y;
+    this->acs_ref_[2] = msg->pose.position.z;
+}
+
 void DifferentialGT::ComputeACSAction()
 {
 
@@ -335,6 +351,7 @@ void DifferentialGT::ComputeACSAction()
     //!---------------------------------------------------
  
     Eigen::VectorXd acs_action(3); // Action to be published
+    std::cout << "ACS Action:" << acs_action.transpose() << std::endl;
     Eigen::VectorXd ho_action(3); // Action from the HO
     if (this->decision_ == 0) // Use cooperative action
     {
@@ -487,7 +504,7 @@ void DifferentialGT::Publish()
     //?--------------------------------------------------------------
 }
 
-
+               
 void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r)
 {
     // Compute the reference for the HO and ACS
@@ -502,7 +519,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     ref_acs.segment(0, 3) = this->acs_ref_;
 
     //! Added line for faking the button press
-    // this->button_pressed_ = true; //! Remove absolutely--------------------------------------
+    this->button_pressed_ = true; //! Remove absolutely--------------------------------------
 
     if (!this->button_pressed_)
     {
@@ -535,37 +552,9 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
             this->wrench_from_ho_msg_.wrench.force.z);
 
         this->z_ = this->F_ * this->z_ + this->G_ * uh; // Update the state z
-
-
-        //! Not liking this part with diff being used
-        this->arbitration_.CosineSimilarityHysteresis(this->z_, this->twist_from_safety_filter_, this->cos_theta_, this->decision_, 0.8, 0.2);
-        Eigen::VectorXd diff = this->ho_ref_ - this->acs_ref_;
-
-        if (diff.norm() > 0.05)
-        {
-            this->decision_ = 1;
-        }
-
-        // Logic for initial value of alpha
-        if(this->decision_ == 0 && this->prev_decision_ == 1)
-        {
-            this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
-
-        } else {
-
-            this->alpha_ = (1.0 + this->cos_theta_) / 2 * (1.0 - diff.norm() / 0.05);
-            this->alpha_ = std::max(0.01, std::min(0.99, this->alpha_));
-        }
-
-
-        // Compute the reference for the ACS based on the safety filter reading 
-        this->acs_ref_ = this->acs_ref_ + this->twist_from_safety_filter_ * dt;
-
-        if (this->decision_ == 1) {
-            Eigen::MatrixXd K = 1.0 * Eigen::MatrixXd::Identity(3, 3);
-            this->z_ = - K * (this->ho_ref_ - this->acs_ref_); //! State of filter is recomputed accordingly here. This may influence the cosine similarity
-        }
-        this->ho_ref_ = this->ho_ref_ + dt * this->z_;
+        
+        this->ho_ref_ = this->ho_ref_ + dt * this->z_; // Update the reference for the HO
+        
         ref_r << this->acs_ref_[0],
                  this->acs_ref_[1],
                  this->acs_ref_[2];

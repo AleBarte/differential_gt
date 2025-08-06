@@ -33,7 +33,8 @@ private:
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
     void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);  // Takes a twist from a Safety Filter and stores it for later use (Marco you don't care about this)
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
-    
+    void ACSReferencePointCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);       // Takes the ACS reference point and stores it for later use
+
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
     void SetCostMatrices();     // Sets the various cost matrices for CGT and NCGT
@@ -55,6 +56,8 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;                       // Subscribes to the robot end effector twist
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;    // Subscribes to twist from safety filter (Marco you can delete this or discard it)
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr acs_reference_point_sub_;          // Subscribes to the ACS reference point
+
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -62,6 +65,7 @@ private:
     Eigen::Matrix3d orientation_;                                                                       // End Effector (EE) Orientation (Rotation Matrix)
     Eigen::Vector3d linear_velocity_ = Eigen::Vector3d::Zero();                                         // Initialize EE linear velocity to zero [m/s]
     Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero();                                // Initialize twist from safety filter to zero [m/s] (Marco can discard)
+    Eigen::Vector3d acs_reference_point_ = Eigen::Vector3d::Zero();                                     // Initialize ACS reference point [m]
 
     // Messages to publish
     geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
