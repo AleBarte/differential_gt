@@ -12,6 +12,7 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"                 // For Twist messages
 #include "std_msgs/msg/float64_multi_array.hpp"                // For Float64MultiArray messages
 #include "std_msgs/msg/int32.hpp"                              // For Int32 messages
+#include "std_msgs/msg/float32.hpp"                            // For Float32 messages (new include)
 #include "sensor_msgs/msg/joy.hpp"                             // For joystick input
 #include <tf2_ros/transform_listener.h>                        // TF2 Transform listener
 #include <tf2_ros/buffer.h>                                    // TF2 Buffer
@@ -34,6 +35,7 @@ private:
     void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);  // Takes a twist from a Safety Filter and stores it for later use (Marco you don't care about this)
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
     void ACSReferencePointCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);       // Takes the ACS reference point and stores it for later use
+    void SafetyCoefficientCallback(const std_msgs::msg::Float32::SharedPtr msg);                // Callback for /safety_coefficient (new callback)
 
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
@@ -41,14 +43,11 @@ private:
     void Publish();             // Calls all the publishers to publish respective messages
     void ComputeACSAction();    // Computes the Automatic Control System Action
 
-    
     void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r); //Computes references for HO and ACS (Marco you can change this function)
-
 
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
-    
 
     // Subscribers
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;             // Subscribes to the force commanded by the joystick
@@ -57,7 +56,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;    // Subscribes to twist from safety filter (Marco you can delete this or discard it)
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr acs_reference_point_sub_;          // Subscribes to the ACS reference point
-
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr safety_coefficient_sub_;                    // Subscribes to the /safety_coefficient topic (new subscriber)
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -70,7 +69,6 @@ private:
     // Messages to publish
     geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
     geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_; // HO wrench to be aplied to robot EE [N] and [Nm]
-    
 
     // Game Theory Objects
     CoopGT coop_gt_;        // CGT
@@ -80,7 +78,7 @@ private:
     Arbitration arbitration_;
 
     // Arbitration level and other variables (Note this code is WIP, these may or may not be used)
-    double alpha_;
+    double alpha_; // Arbitration level (updated dynamically from /safety_coefficient)
     int cosine_similarity_counter_ = 0;
     int decision_ = 0;                      // Decision made by the arbitration
     int prev_decision_ = 0;
@@ -116,7 +114,6 @@ private:
     Eigen::MatrixXd K_ncgt_a_;
     Eigen::MatrixXd K_ncgt_h_;
 
-
     // Parameters
     std::string ho_wrench_topic_;           // Topic from which the HO wrench is read
     std::string acs_wrench_pub_topic_;      // Topic on which the ACS wrench is published
@@ -129,7 +126,6 @@ private:
     double switch_off_point_;               // Switch off point for Cosien Similarity Hysteresis
     double publishing_rate_;                // Default publishing rate in seconds
     bool override_ho_wrench_;               // Flag to override the HO wrench with ACS action
-
 
     // TF2
     tf2_ros::Buffer tf_buffer_;
@@ -144,7 +140,6 @@ private:
 
     // Debugging
     Eigen::Vector3d initial_position_; // Initial position of the end effector
-
 
     Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
     Eigen::VectorXd ho_ref_; // Reference trajectory for the HO
@@ -168,7 +163,6 @@ private:
     std_msgs::msg::Float64MultiArray cos_theta_msg_;
     std_msgs::msg::Int32 decision_msg_;
     //?------------------------------------------------------------------------------------
-
 
 };
 #endif // DIFFERENTIAL_GT_HPP

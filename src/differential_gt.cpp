@@ -56,8 +56,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
     
-        this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
+    this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
+
+    // Add a subscriber for the /safety_coefficient topic
+    this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>(
+        "/safety_coefficient", 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
 
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
@@ -79,8 +83,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->noncoop_gt_.setSysParams(this->A_, this->B_);
 
     //* Set initial value of alpha for arbitration
-    this->alpha_ = 0.01; // Default value, can be changed later
-    this->coop_gt_.setAlpha(this->alpha_);
+    //this->alpha_ = 0.01; // Default value, can be changed later
+    //this->coop_gt_.setAlpha(this->alpha_);
     
     // Setup game theory objects with cost matrices
     this->coop_gt_.setCostsParams(this->Qhh_, this->Qhr_, this->Qrh_, this->Qrr_, this->Rh_, this->Rr_);
@@ -253,6 +257,16 @@ void DifferentialGT::ACSReferencePointCallback(const geometry_msgs::msg::PoseSta
     this->acs_ref_[0] = msg->pose.position.x;
     this->acs_ref_[1] = msg->pose.position.y;
     this->acs_ref_[2] = msg->pose.position.z;
+}
+
+//----------------------------------------------------
+// SafetyCoefficientCallback
+void DifferentialGT::SafetyCoefficientCallback(const std_msgs::msg::Float32::SharedPtr msg)
+{
+    // Update alpha with the value received from the /safety_coefficient topic
+    this->alpha_ = msg->data;
+    this->coop_gt_.setAlpha(this->alpha_); // Update the alpha value in the cooperative game theory object
+    RCLCPP_INFO(this->get_logger(), "Updated alpha to: %f", this->alpha_);
 }
 
 void DifferentialGT::ComputeACSAction()
