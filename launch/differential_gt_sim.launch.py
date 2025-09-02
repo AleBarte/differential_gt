@@ -18,7 +18,10 @@ def generate_launch_description():
                 {"publishing_rate": publishing_rate},
                 {"exclude_acs": False},
                 {"use_safety_filter": False},
-                {"wrench_from_joystick_topic": "/differential_gt/wrench_from_ho"}
+                {"wrench_from_joystick_topic": "/differential_gt/wrench_from_ho"},
+                {"switch_on_point": 0.9},
+                {"switch_off_point": 0.0},
+                {"end_effector": "base_link"}
             ]
         )
     ])

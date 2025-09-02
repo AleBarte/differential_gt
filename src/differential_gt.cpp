@@ -112,11 +112,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         rclcpp::shutdown();
     }
 
-    //TODO: Remove, Just for marco experiment
-    // this->ComputeTrajectories();
-    // this->ComputeLinearTrajectory();
-    //TODO ----------------------------------
-
     // Initialization concluded
     this->is_initialized_ = true;
 
@@ -367,6 +362,12 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd acs_action(3); // Action to be published
     std::cout << "ACS Action:" << acs_action.transpose() << std::endl;
     Eigen::VectorXd ho_action(3); // Action from the HO
+
+    this->arbitration_.CosineSimilarityHysteresis(
+        uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
+        this->switch_on_point_, this->switch_off_point_
+    );
+
     if (this->decision_ == 0) // Use cooperative action
     {
         acs_action = u_cgt_a;
@@ -393,7 +394,7 @@ void DifferentialGT::ComputeACSAction()
 
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
-    this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
+    this->wrench_from_acs_msg_.header.frame_id = this->end_effector_;
     this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
     this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
     this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
@@ -402,7 +403,7 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
 
     this->wrench_ho_topub_msg_.header.stamp = this->now();
-    this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
+    this->wrench_ho_topub_msg_.header.frame_id = this->end_effector_;
     this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
     this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
     this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
