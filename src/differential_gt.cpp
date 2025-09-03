@@ -25,6 +25,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<bool>("override_ho_wrench", false); 
     this->declare_parameter<std::string>("save_matrices", ""); 
     this->declare_parameter<std::string>("load_matrices", "");
+    this->declare_parameter<bool>("mix", false);
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
@@ -40,11 +41,13 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
     this->save_matrices_ = this->get_parameter("save_matrices").as_string();
     this->load_matrices_ = this->get_parameter("load_matrices").as_string();
+    this->mix_ = this->get_parameter("mix").as_bool();
 
     // Initialize publishers and subscribers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
     this->wrench_from_ho_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_pub_topic_, 10);
     this->feedback_wrench_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/differential_gt/force_feedback", 10);
+    this->selected_goal_pub_ = this->create_publisher<std_msgs::msg::Int32>("/differential_gt/selected_target_idx", 10);
 
     this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
         this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
@@ -96,9 +99,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         Utils::saveMultipleMatrices(save_path, matrices);
     }
 
-    // Precompute the non-cooperative gains (as long as matrices are constant)
-    this->noncoop_gt_.computeNonCooperativeGains();
-    this->noncoop_gt_.getNonCooperativeGains(this->K_ncgt_h_, this->K_ncgt_a_);
+
     
 
     // Initialize timer
@@ -338,25 +339,28 @@ void DifferentialGT::ComputeACSAction()
     this->acs_cgt_wrench_msg_.wrench.force.z = u_cgt_a[2];
     //!---------------------------------------------------
  
+    //! Here you can force the decision variable to either 0 or 1 for testing
+    // this->decision_ = 0;
+    //!----------------------------------------------------------------------
     Eigen::VectorXd acs_action(3); // Action to be published
-    Eigen::VectorXd ho_action(3); // Action from the HO
+    Eigen::VectorXd opt_ho_action(3); // Action from the HO
     if (this->decision_ == 0) // Use cooperative action
     {
         acs_action = u_cgt_a;
-        ho_action = u_cgt_h; // Action from the HO in cooperative game
-        if (this->override_ho_wrench_)
-        {
-            acs_action += u_cgt_h; // Add the cooperative action for the first agent
-        }
+        opt_ho_action = u_cgt_h; // Action from the HO in cooperative game
+        // if (this->override_ho_wrench_)
+        // {
+        //     acs_action += u_cgt_h; // Add the cooperative action for the first agent
+        // }
     }
     else // Use non-cooperative action
     {
         acs_action = u_ncgt_a;
-        ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
-        if (this->override_ho_wrench_)
-        {
-            acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
-        }
+        opt_ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
+        // if (this->override_ho_wrench_)
+        // {
+        //     acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
+        // }
     }
 
     //TODO: Matrix tuning
@@ -393,18 +397,38 @@ void DifferentialGT::ComputeACSAction()
 
     this->wrench_ho_topub_msg_.header.stamp = this->now();
     this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
-    this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
-    this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
-    this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
-    this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
-    this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
-    this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+    if (!this->override_ho_wrench_)
+    {
+        this->wrench_ho_topub_msg_.wrench.force.x  = this->wrench_from_ho_msg_.wrench.force.x;
+        this->wrench_ho_topub_msg_.wrench.force.y  = this->wrench_from_ho_msg_.wrench.force.y;
+        this->wrench_ho_topub_msg_.wrench.force.z  = this->wrench_from_ho_msg_.wrench.force.z;
+        this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
+        this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
+        this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+    } else {
+        this->wrench_ho_topub_msg_.wrench.force.x  = opt_ho_action[0];
+        this->wrench_ho_topub_msg_.wrench.force.y  = opt_ho_action[1];
+        this->wrench_ho_topub_msg_.wrench.force.z  = opt_ho_action[2];
+        this->wrench_ho_topub_msg_.wrench.torque.x = 0.0;
+        this->wrench_ho_topub_msg_.wrench.torque.y = 0.0;
+        this->wrench_ho_topub_msg_.wrench.torque.z = 0.0;
+    }
+    
+    this->filtered_acs_wrench_ = 0.9 * this->filtered_acs_wrench_ + 0.1 * acs_action; // Low-pass filter for the ACS action
 
-    if (!this->potential_active_)
+    double action_scalar_prod = acs_action.dot(opt_ho_action);
+
+    if (!this->potential_active_ && action_scalar_prod < 0.0)
     {
         this->feedback_wrench_msg_.wrench.force.x = acs_action[0];
         this->feedback_wrench_msg_.wrench.force.y = acs_action[1];
         this->feedback_wrench_msg_.wrench.force.z = acs_action[2];
+        // this->feedback_wrench_msg_.wrench.force.x = 100.0 * (this->acs_ref_[0] - this->position_[0]);
+        // this->feedback_wrench_msg_.wrench.force.y = 100.0 * (this->acs_ref_[1] - this->position_[1]); 
+        // this->feedback_wrench_msg_.wrench.force.z = 100.0 * (this->acs_ref_[2] - this->position_[2]);
+        // this->feedback_wrench_msg_.wrench.force.x = this->filtered_acs_wrench_[0];
+        // this->feedback_wrench_msg_.wrench.force.y = this->filtered_acs_wrench_[1];
+        // this->feedback_wrench_msg_.wrench.force.z = this->filtered_acs_wrench_[2]; 
         this->feedback_wrench_msg_.wrench.torque.x = 0.0;
         this->feedback_wrench_msg_.wrench.torque.y = 0.0;
         this->feedback_wrench_msg_.wrench.torque.z = 0.0;
@@ -460,6 +484,8 @@ void DifferentialGT::SetSystemMatrices()
     this->G_     = Eigen::Matrix3d::Identity() * diag_b;
 }
 
+
+
 //----------------------------------------------------
 // Set Cost Matrices
 void DifferentialGT::SetCostMatrices()
@@ -500,7 +526,7 @@ void DifferentialGT::SetCostMatrices()
 
         this->Qrr_.block(3, 3, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
 
-        this->Qhr_.block(0, 0, 3, 3) = 1e-1 * Eigen::Matrix3d::Identity();
+        this->Qhr_.block(0, 0, 3, 3) = 1e-4 * Eigen::Matrix3d::Identity();
         this->Qhr_.block(3, 3, 3, 3) = Eigen::Matrix3d::Zero();
 
         this->Rh_ = 5e-4 * Eigen::Matrix3d::Identity();
@@ -519,7 +545,7 @@ void DifferentialGT::SetCostMatrices()
         //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
         this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
         std::cout << "Here"<<std::endl;
-        // this->Qr_ = 30.0 * this->Qr_; // Scale the Qr matrix for non-cooperative game theory
+        this->Qr_ = 5.0 * this->Qr_; // Scale the Qr matrix for non-cooperative game theory
         this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_, this->Rhh_, this->Rrr_, this->Rhr_, this->Rrh_);
         std::cout << "Setting up Non-Cooperative Game Theory with matrices:" << std::endl;
         //!--------------------------------------------------------------------------------
@@ -561,6 +587,23 @@ void DifferentialGT::SetCostMatrices()
         
         this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_, this->Rhh_, this->Rrr_, this->Rhr_, this->Rrh_);
     }
+
+    // Precompute the non-cooperative gains (as long as matrices are constant)
+    this->noncoop_gt_.computeNonCooperativeGains();
+    this->noncoop_gt_.getNonCooperativeGains(this->K_ncgt_h_, this->K_ncgt_a_);
+
+    if (this->mix_ && this->load_matrices_ != "pedrocchi")
+    {
+        RCLCPP_ERROR(this->get_logger(), "Mixing is wrong!");
+        rclcpp::shutdown();
+    } else {
+        this->default_Qr_ = 30.0 * this->Qr_;
+        this->K_ncgt_ped_h_ = this->K_ncgt_h_;
+        this->K_ncgt_ped_a_ = this->K_ncgt_a_;
+        this->noncoop_gt_.setCostsParams(this->Qh_, this->default_Qr_, this->Rhh_, this->Rrr_, this->Rhr_, this->Rrh_);
+        this->noncoop_gt_.computeNonCooperativeGains();
+        this->noncoop_gt_.getNonCooperativeGains(this->K_ncgt_default_h_, this->K_ncgt_default_a_);
+    }
 }
 
 //----------------------------------------------------
@@ -577,6 +620,7 @@ void DifferentialGT::Publish()
     this->wrench_from_acs_pub_->publish(this->wrench_from_acs_msg_);
     this->wrench_from_ho_pub_ ->publish(this->wrench_ho_topub_msg_);
     this->feedback_wrench_pub_->publish(this->feedback_wrench_msg_);
+    this->selected_goal_pub_  ->publish(this->selected_goal_msg_);
 
     //? Lines are for debugging------------------------------------
     this->ref_ho_pub_         ->publish(this->ref_ho_msg_);
@@ -610,28 +654,37 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     Eigen::VectorXd goal(3);
     Eigen::VectorXd goal1(3);
     Eigen::VectorXd goal2(3);
+    Eigen::VectorXd goal3(3); // This is the third goal position, can be set as a parameter
     Eigen::VectorXd obstacle(3);
     Eigen::VectorXd obstacle2(3);
 
     std::vector<Eigen::VectorXd> obstacle_vec;
     std::vector<double> obstacle_radius_vec;
     std::vector<Eigen::VectorXd> goal_vec;
-    goal1 << 0.40, 0.49, 0.3;
-    goal2 << 0.11, 0.64, 0.1; // This is the second goal position, can be set as a parameter
 
-    obstacle << 0.11, 0.49, 0.1; // This is the obstacle position, can be set as a parameter
-    obstacle2 << 0.11, 0.79, 0.1; // This is the second obstacle position, can be set as a parameter
+    //? Positioning experiment ---------------------------------------------------------
+    // goal1 << 0.40, 0.49, 0.3;
+    // goal2 << -0.2, 0.69, 0.5; // This is the second goal position, can be set as a parameter
+    // goal3 << 0.40, 0.49, 0.5; // This is the third goal position, can be set as a parameter
+    //?------------------------------------------------------------------------------------
 
-    obstacle_vec = {obstacle, obstacle2}; // Vector of obstacles, can be extended with more obstacles
-    goal_vec = {goal1, goal2};
+    //? Pick and place experiment ---------------------------------------------------------
+    goal1 << -0.451, 0.54, 0.266;
+    goal2 << 0.437, 0.633, 0.272;
+    goal3 << 0.537, 0.341, 0.275;
+    obstacle << -0.035, 0.459, 0.122; // This is the obstacle position, can be set as a parameter
+    //? ------------------------------------------------------------------------------------
+
+    // obstacle_vec = {obstacle}; // Vector of obstacles, can be extended with more obstacles
+    obstacle_vec = {obstacle};
+    goal_vec = {goal1, goal2, goal3};
 
     double obstacle_radius = 0.2; // Radius of the obstacle, can be set as a parameter
     double obstacle_radius2 = 0.2; // Radius of the second obstacle, can be set as a parameter
-    obstacle_radius_vec = {obstacle_radius, obstacle_radius2};
-    //!--------------------------------------------------------------------------------------------
-
-    //! Added line for faking the button press
-    // this->button_pressed_ = true; //! Remove absolutely--------------------------------------
+    obstacle_radius_vec = {obstacle_radius};
+    //! This line needs to stay commented out-----------------------------------------------------------------------
+    // this->button_pressed_ = true;
+    //!-------------------------------------------------------------------------------------------------------------
 
     if (!this->button_pressed_)
     {
@@ -657,7 +710,8 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         // Compute the reference for the HO based on the admittance model
         double dt = 1.0 / this->publishing_rate_;
-        double gamma = 0.01;
+        double gamma = 1.0; //! Previously here was 0.8
+        double scaling;
         Eigen::Vector3d uh(
             this->wrench_from_ho_msg_.wrench.force.x,
             this->wrench_from_ho_msg_.wrench.force.y,
@@ -670,16 +724,18 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         Eigen::MatrixXd K_obstacle = Eigen::MatrixXd::Identity(3, 3) * 0.01; // Repulsive force gain
         Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(obstacle_vec, obstacle_radius_vec);
         // Select most likely goal
-        goal = this->SelectGoal(goal_vec, uh);
+        goal = this->SelectGoal(goal_vec, uh, scaling);
         Eigen::VectorXd goal_diff = goal - this->position_;
         Eigen::VectorXd attractive_force = K * goal_diff; 
-        this->acs_ref_ = this->position_ +  attractive_force + K_obstacle * repulsive_force; // Update the ACS reference (Here I will need to sum the effect of the backoff caused by the potential)
+
+        this->acs_ref_ = this->position_ + attractive_force * scaling + K_obstacle * repulsive_force; // Update the ACS reference (Here I will need to sum the effect of the backoff caused by the potential)
         
-        if (goal_diff.norm() < 0.05) // If close to the goal, stop
-        {
-            this->acs_ref_ = goal;
-        }
+        // if (goal_diff.norm() < 0.05) // If close to the goal, stop
+        // {
+        //     this->acs_ref_ = goal;
+        // }
         this->ho_ref_ = this->position_ + dt * this->z_; //!Modified Here
+
 
         // Compute the energy dissipated
         double delta_energy = repulsive_force.dot(this->linear_velocity_) * dt;
@@ -695,15 +751,10 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
                 this->wrench_from_ho_msg_.wrench.force.z;
         
         int placeholder;
-        Eigen::VectorXd delta = this->acs_ref_ - this->position_;
-        this->arbitration_.CosineSimilarity(u_h, delta, this->cos_theta_, placeholder);
+        this->arbitration_.CosineSimilarity(u_h, goal_diff, this->cos_theta_, placeholder);
         this->alpha_ = std::max(0.01, std::min(0.99, this->cos_theta_));
-
-        Eigen::VectorXd goal_dir = goal - this->position_;
-        double goal_theta;
-        this->arbitration_.CosineSimilarity(u_h, goal_dir, goal_theta, placeholder);
         
-        if (goal_theta < 0.0) {
+        if (this->cos_theta_ < 0.0) {
             this->stored_energy_ = this->stored_energy_ + 1e-5 * Ug; // Ensure stored energy is non-negative
         }
 
@@ -728,12 +779,15 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const Eigen::VectorXd &obstacle, const double &radius)
 {
     Eigen::VectorXd force(3);
+    Eigen::VectorXd tool_tip(3);
     force.setZero();
 
     double eta = 1.0;
 
+    tool_tip = this->position_ + this->orientation_.col(2) * GRIPPER_OFFSET;
+
     // Compute the distance to the obstacle
-    Eigen::VectorXd diff = this->position_ - obstacle;
+    Eigen::VectorXd diff = tool_tip - obstacle;
     double distance = diff.norm();
 
     // If within the radius, compute the repulsive force
@@ -763,34 +817,65 @@ Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const std::vector<Eigen::V
     } else {
         this->potential_active_ = false; // Reset the potential active flag if no force is computed
     }
-    total_force = total_force - D* this->linear_velocity_; // Damping effect on the repulsive force
+    total_force = total_force - D * this->linear_velocity_; // Damping effect on the repulsive force
     return total_force;
 }
 
 //----------------------------------------------------
 // Select Goal
 
-Eigen::VectorXd DifferentialGT::SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd& uh)
+Eigen::VectorXd DifferentialGT::SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd& uh, double &scaling)
 {
-    double sum = 0.0;
-    Eigen::VectorXd w(goals.size());
-    Eigen::VectorXd goal_dist(3);
 
-    if (uh.norm() < 1e-6)
-    {
-        return this->position_;
+    Eigen::VectorXd goal_dist(3);
+    Eigen::VectorXd delta_p(3);
+    double ent;
+    Eigen::VectorXd posterior = compute_moe_posterior(this->position_, uh, goals, ent);
+    ent = ent / std::log(goals.size());
+    std::cout << "Entropy: " << ent << std::endl;
+    delta_p = posterior - this->filtered_posterior_;
+    this->filtered_posterior_ = 0.99 * this->filtered_posterior_ + 0.01 * posterior; // Apply a low-pass filter to the posterior;
+    int max_index;
+    this->filtered_posterior_.maxCoeff(&max_index); // Get the index of the maximum value in posterior
+
+    Eigen::VectorXd selected_goal = goals[max_index]; // Select the goal with the maximum posterior probability
+    // scaling = this->filtered_posterior_[max_index]; // Scaling factor based on the maximum posterior probability
+
+    Eigen::VectorXd delta = selected_goal - this->position_;
+    double distance = delta.norm();
+    if (this->previous_index_ != max_index) {
+        this->d0_ = distance / 2.0;
+        this->previous_index_ = max_index;
     }
 
     for (int i = 0; i < goals.size(); i++)
     {
         goal_dist = goals[i] - this->position_;
-        sum += std::exp(-goal_dist.norm());
-        w[i] = std::exp(-goal_dist.norm());
+        if (goal_dist.norm() < 0.05 && uh.norm() < 7.0) // If close to the goal, stop
+        {
+            selected_goal = goals[i];
+            
+            scaling = 1.0;
+            if (this->mix_)
+            {
+                this->K_ncgt_a_ = this->K_ncgt_default_a_;
+                this->K_ncgt_h_ = this->K_ncgt_default_h_;
+                std::cout << "Changed Values for K" << std::endl;
+            }
+            this->selected_goal_msg_.data = i;
+            return selected_goal;
+        }
     }
-    w /= sum;
+    if (this->mix_) {
+        this->K_ncgt_a_ = this->K_ncgt_ped_a_;
+        this->K_ncgt_h_ = this->K_ncgt_ped_h_;
+        std::cout << "Back to Pedrocchi" << std::endl;
+    }
 
-    int max_index;
-    w.maxCoeff(&max_index); // Get the index of the maximum value in w
+    double alpha = 1.0;
+    scaling = 1.0 / (1.0 + std::exp(alpha * (distance - this->d0_))) * (1.0 - ent);
+    
+    this->selected_goal_msg_.data = max_index;
+    return selected_goal; // Return the goal with the maximum posterior probability
 
-    return goals[max_index]; // Return the goal with the maximum weight
 }

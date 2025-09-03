@@ -31,6 +31,7 @@ add_executable(differential_gt
               src/differential_gt_main.cpp
               src/differential_gt.cpp
               src/utils.cpp
+              src/moe_goal_inference.cpp
 )
 
 target_link_libraries(differential_gt_node gt_lib)

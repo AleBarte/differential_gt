@@ -6,6 +6,7 @@
 #include "../include/differential_gt/ncgt.hpp"
 #include "../include/differential_gt/arbitration.hpp"
 #include "../include/differential_gt/utils.hpp"
+#include "../include/differential_gt/moe_goal_inference.hpp"
 #include <eigen3/Eigen/Dense>
 #include <chrono>
 #include "geometry_msgs/msg/wrench_stamped.hpp"
@@ -18,6 +19,8 @@
 #include <tf2_ros/buffer.h>                                    // TF2 Buffer
 #include <tf2/LinearMath/Quaternion.h>                         // TF2 Quaternion math
 #include <tf2/LinearMath/Transform.h>                          // TF2 Transform math
+
+#define GRIPPER_OFFSET 0.1629 // Offset from the end effector to the tool tip in meters
 
 class DifferentialGT : public rclcpp::Node
 {
@@ -45,13 +48,14 @@ private:
     void ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &ref_r); //Computes references for HO and ACS (Marco you can change this function)
     Eigen::VectorXd ComputeRepulsiveForce(const Eigen::VectorXd &obsatcle, const double &radius);
     Eigen::VectorXd ComputeRepulsiveForce(const std::vector<Eigen::VectorXd> &obstacles, const std::vector<double> &radii);
-    Eigen::VectorXd SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd &uh);
+    Eigen::VectorXd SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd &uh, double &scaling);
 
 
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_wrench_pub_; // Publisher for the feedback wrench (force feedback to joystick)
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr selected_goal_pub_;                // Publisher for the selected goal index
     
 
     // Subscribers
@@ -72,6 +76,7 @@ private:
     geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
     geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_; // HO wrench to be aplied to robot EE [N] and [Nm]
     geometry_msgs::msg::WrenchStamped feedback_wrench_msg_; // Feedback wrench to be applied to joystick [N] and [Nm]
+    std_msgs::msg::Int32                selected_goal_msg_; // Selected goal index
     
 
     // Game Theory Objects
@@ -104,6 +109,14 @@ private:
     Eigen::MatrixXd Rhr_;
     Eigen::MatrixXd Rrh_;
 
+
+    // For Mixing
+    Eigen::MatrixXd default_Qr_;
+    Eigen::MatrixXd K_ncgt_default_a_;
+    Eigen::MatrixXd K_ncgt_default_h_;
+    Eigen::MatrixXd K_ncgt_ped_a_;
+    Eigen::MatrixXd K_ncgt_ped_h_;
+
     // System Matrices
     Eigen::MatrixXd A_; // System matrix 
     Eigen::MatrixXd B_; // Input matrix
@@ -132,7 +145,8 @@ private:
     double publishing_rate_;                // Default publishing rate in seconds
     bool override_ho_wrench_;               // Flag to override the HO wrench with ACS action
     std::string save_matrices_;             // Flag to save matrices to a file
-    std::string load_matrices_;
+    std::string load_matrices_;             // Flag to load previously saved configurations
+    bool mix_;                              // Mix Pedrocchi control action with default
 
 
     // TF2
@@ -151,10 +165,14 @@ private:
 
     // Debugging
     Eigen::Vector3d initial_position_; // Initial position of the end effector
+    int previous_index_ = -1;
+    double d0_;
 
 
     Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
-    Eigen::VectorXd ho_ref_; // Reference trajectory for the HO
+    Eigen::VectorXd ho_ref_; // Reference trajectory for the HO 
+    Eigen::VectorXd filtered_posterior_ = Eigen::VectorXd::Zero(3); // Filtered posterior for the MoE //! Targets must be known a priori
+    Eigen::VectorXd filtered_acs_wrench_ = Eigen::VectorXd::Zero(3); // Filtered ACS wrench
 
     //? Debugging ------------------------------------------------------------------------
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_ho_pub_;
