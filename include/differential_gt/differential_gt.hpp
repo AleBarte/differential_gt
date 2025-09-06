@@ -36,6 +36,7 @@ private:
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
     void ACSReferencePointCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);       // Takes the ACS reference point and stores it for later use
     void SafetyCoefficientCallback(const std_msgs::msg::Float32::SharedPtr msg);                // Callback for /safety_coefficient (new callback)
+    void OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg);
 
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
@@ -57,6 +58,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr acs_reference_point_sub_;          // Subscribes to the ACS reference point
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr safety_coefficient_sub_;                    // Subscribes to the /safety_coefficient topic (new subscriber)
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr override_sub_;                                // Subscribes to the override topic (new subscriber)
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -85,6 +87,7 @@ private:
     double cos_theta_ = 0.0;                // Cosine similarity value
     double cos_theta_coop_ = 0.0;           // Cosine similarity value for cooperative action
     double cos_theta_nc_ = 0.0;             // Cosine similarity value for non-cooperative action
+    int override_value_ = 0;               // Value to manually override the arbitration decision (1 to override, 0 to not override)
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;

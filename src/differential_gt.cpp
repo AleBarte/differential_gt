@@ -63,6 +63,10 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>(
         "/safety_coefficient", 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
 
+    // Subscribe to joystick/override topic for manual override
+    this->override_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+        "joystick/override", 10, std::bind(&DifferentialGT::OverrideCallback, this, std::placeholders::_1));
+
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
 
@@ -264,6 +268,21 @@ void DifferentialGT::SafetyCoefficientCallback(const std_msgs::msg::Float32::Sha
     RCLCPP_INFO(this->get_logger(), "Updated alpha to: %f", this->alpha_);
 }
 
+//----------------------------------------------------
+// OverrideCallback
+void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+    {
+        return;
+    }
+    
+    this->override_value_ = msg->data;
+    RCLCPP_INFO(this->get_logger(), "Received override value: %d", this->override_value_);
+}
+
+//----------------------------------------------------
+// ComputeACSAction
 void DifferentialGT::ComputeACSAction()
 {
 
@@ -363,35 +382,41 @@ void DifferentialGT::ComputeACSAction()
     std::cout << "ACS Action:" << acs_action.transpose() << std::endl;
     Eigen::VectorXd ho_action(3); // Action from the HO
 
-    this->arbitration_.CosineSimilarityHysteresis(
-    uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
-    this->switch_on_point_, this->switch_off_point_
-    );
 
-    if (this->decision_ == 0) // Use cooperative action
-    {
-        acs_action = u_cgt_a;
-        ho_action = u_cgt_h; // Action from the HO in cooperative game
-        if (this->override_ho_wrench_)
+    // Check the override value
+    if (this->override_value_ == 1) {
+        acs_action.setZero(); // Set acs_action to 0 and skip the block
+    } else if (this->override_value_ == 0) {
+
+        // ARBITRATION -------------------
+        // Select Game
+        // Select alpha 
+        //________________________________
+
+        this->arbitration_.CosineSimilarityHysteresis(
+            uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
+            this->switch_on_point_, this->switch_off_point_
+        );
+
+        if (this->decision_ == 0) // Use cooperative action
         {
-            acs_action += u_cgt_h; // Add the cooperative action for the first agent
+            acs_action = u_cgt_a;
+            ho_action = u_cgt_h; // Action from the HO in cooperative game
+            if (this->override_ho_wrench_)
+            {
+                acs_action += u_cgt_h; // Add the cooperative action for the first agent
+            }
+        }
+        else // Use non-cooperative action
+        {
+            acs_action = u_ncgt_a;
+            ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
+            if (this->override_ho_wrench_)
+            {
+                acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
+            }
         }
     }
-    else // Use non-cooperative action
-    {
-        acs_action = u_ncgt_a;
-        ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
-        if (this->override_ho_wrench_)
-        {
-            acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
-        }
-    }
-
-    // ARBITRATION -------------------
-    // Select Game
-    // Select alpha 
-    //________________________________
-
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
     this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
