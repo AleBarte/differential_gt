@@ -83,8 +83,8 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->noncoop_gt_.setSysParams(this->A_, this->B_);
 
     //* Set initial value of alpha for arbitration
-    //this->alpha_ = 0.01; // Default value, can be changed later
-    //this->coop_gt_.setAlpha(this->alpha_);
+    this->alpha_ = 0.01; // Default value, can be changed later
+    this->coop_gt_.setAlpha(this->alpha_);
     
     // Setup game theory objects with cost matrices
     this->coop_gt_.setCostsParams(this->Qhh_, this->Qhr_, this->Qrh_, this->Qrr_, this->Rh_, this->Rr_);
@@ -364,8 +364,8 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd ho_action(3); // Action from the HO
 
     this->arbitration_.CosineSimilarityHysteresis(
-        uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
-        this->switch_on_point_, this->switch_off_point_
+    uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
+    this->switch_on_point_, this->switch_off_point_
     );
 
     if (this->decision_ == 0) // Use cooperative action
@@ -394,7 +394,7 @@ void DifferentialGT::ComputeACSAction()
 
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
-    this->wrench_from_acs_msg_.header.frame_id = this->end_effector_;
+    this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
     this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
     this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
     this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
@@ -403,7 +403,7 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
 
     this->wrench_ho_topub_msg_.header.stamp = this->now();
-    this->wrench_ho_topub_msg_.header.frame_id = this->end_effector_;
+    this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
     this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
     this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
     this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
