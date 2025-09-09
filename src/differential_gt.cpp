@@ -279,6 +279,16 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
     
     this->override_value_ = msg->data;
     RCLCPP_INFO(this->get_logger(), "Received override value: %d", this->override_value_);
+
+    // Set button_pressed_ based on the override value
+    if (this->override_value_ == 2)
+    {
+        this->button_pressed_ = true;
+    }
+    else
+    {
+        this->button_pressed_ = false;
+    }
 }
 
 //----------------------------------------------------
@@ -383,10 +393,13 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd ho_action(3); // Action from the HO
 
 
-    // Check the override value
-    if (this->override_value_ == 1) {
-        acs_action.setZero(); // Set acs_action to 0 and skip the block
-    } else if (this->override_value_ == 0) {
+    // Check the manual override value
+    if (this->override_value_ == 1) 
+    {
+        acs_action.setZero(); // Set acs_action to 0 and skip the following block
+    } 
+    else 
+    {
 
         // ARBITRATION -------------------
         // Select Game
@@ -409,8 +422,8 @@ void DifferentialGT::ComputeACSAction()
         }
         else // Use non-cooperative action
         {
-            acs_action = u_ncgt_a;
-            ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
+            acs_action = (1 - this->alpha_) * u_ncgt_a;
+            ho_action = this->alpha_ * u_ncgt_h; 
             if (this->override_ho_wrench_)
             {
                 acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
@@ -559,17 +572,18 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     ref_acs.segment(0, 3) = this->acs_ref_;
 
     //! Added line for faking the button press
-    this->button_pressed_ = true; //! Remove absolutely--------------------------------------
+    // this->button_pressed_ = true; 
 
     if (!this->button_pressed_)
     {
         this->decision_ = 0;
-        this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
+        //this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
         this->coop_gt_.setAlpha(this->alpha_);
         this->coop_gt_.setPosReference(this->ho_ref_, this->acs_ref_);
 
         Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
-        this->ho_ref_ = ref_cgt.segment(0,3);
+        //this->ho_ref_ = ref_cgt.segment(0,3);
+        this->ho_ref_ = this->position_; // When button is not pressed HO & ACS reference is the current position
         this->acs_ref_ = this->ho_ref_;
 
         ref_h << this->ho_ref_[0],
