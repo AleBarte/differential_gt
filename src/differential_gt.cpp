@@ -95,8 +95,9 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
 
     //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
     this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
-    
-    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_ * 30.0, this->Rh_, this->Rr_);
+
+    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_*8, this->Rh_, this->Rr_);
+    // Add *30 to Qr to make the ACS stiffer in the non-cooperative case (strong assistance)
     //!--------------------------------------------------------------------------------
     
     // Precompute the non-cooperative gains (as long as matrices are constant)
@@ -175,7 +176,7 @@ bool DifferentialGT::Startup()
 
 //----------------------------------------------------
 // ButtonsCallback
-void DifferentialGT::ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
+void DifferentialGT::ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg) // Used only with falcon joystick
 {
     if (!this->is_initialized_)
         return;
@@ -265,12 +266,12 @@ void DifferentialGT::SafetyCoefficientCallback(const std_msgs::msg::Float32::Sha
     // Update alpha with the value received from the /safety_coefficient topic
     this->alpha_ = msg->data;
     this->coop_gt_.setAlpha(this->alpha_); // Update the alpha value in the cooperative game theory object
-    RCLCPP_INFO(this->get_logger(), "Updated alpha to: %f", this->alpha_);
+    // RCLCPP_INFO(this->get_logger(), "Updated alpha to: %f", this->alpha_);
 }
 
 //----------------------------------------------------
 // OverrideCallback
-void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
+void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg) //Used only with wii remote
 {
     if (!this->is_initialized_)
     {
@@ -278,7 +279,7 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
     }
     
     this->override_value_ = msg->data;
-    RCLCPP_INFO(this->get_logger(), "Received override value: %d", this->override_value_);
+    // RCLCPP_INFO(this->get_logger(), "Received override value: %d", this->override_value_);
 
     // Set button_pressed_ based on the override value
     if (this->override_value_ == 2)
@@ -401,10 +402,7 @@ void DifferentialGT::ComputeACSAction()
     else 
     {
 
-        // ARBITRATION -------------------
-        // Select Game
-        // Select alpha 
-        //________________________________
+        // ARBITRATION ------------------------------------------
 
         this->arbitration_.CosineSimilarityHysteresis(
             uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
@@ -423,7 +421,9 @@ void DifferentialGT::ComputeACSAction()
         else // Use non-cooperative action
         {
             acs_action = (1 - this->alpha_) * u_ncgt_a;
-            ho_action = this->alpha_ * u_ncgt_h; 
+            ho_action = this->alpha_ * u_ncgt_h;
+            // acs_action = u_ncgt_a;
+            // ho_action = u_ncgt_h; 
             if (this->override_ho_wrench_)
             {
                 acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
@@ -570,19 +570,14 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     current_state.segment(0,3) = this->position_;
     ref_ho.segment(0, 3) = this->ho_ref_;
     ref_acs.segment(0, 3) = this->acs_ref_;
-
-    //! Added line for faking the button press
-    // this->button_pressed_ = true; 
-
+ 
     if (!this->button_pressed_)
     {
         this->decision_ = 0;
-        //this->alpha_ = this->coop_gt_.getAlphaFromCurrentState(current_state, ref_ho, ref_acs);
         this->coop_gt_.setAlpha(this->alpha_);
         this->coop_gt_.setPosReference(this->ho_ref_, this->acs_ref_);
 
         Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
-        //this->ho_ref_ = ref_cgt.segment(0,3);
         this->ho_ref_ = this->position_; // When button is not pressed HO & ACS reference is the current position
         this->acs_ref_ = this->ho_ref_;
 
