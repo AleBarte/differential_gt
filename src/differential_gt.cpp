@@ -96,7 +96,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
     this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
 
-    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_*8, this->Rh_, this->Rr_);
+    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_*5.0, this->Rh_, this->Rr_);
     // Add *30 to Qr to make the ACS stiffer in the non-cooperative case (strong assistance)
     //!--------------------------------------------------------------------------------
     
@@ -411,7 +411,7 @@ void DifferentialGT::ComputeACSAction()
 
         if (this->decision_ == 0) // Use cooperative action
         {
-            acs_action = u_cgt_a;
+            acs_action = (1 - this->alpha_) * u_cgt_a;
             ho_action = u_cgt_h; // Action from the HO in cooperative game
             if (this->override_ho_wrench_)
             {
@@ -421,9 +421,9 @@ void DifferentialGT::ComputeACSAction()
         else // Use non-cooperative action
         {
             acs_action = (1 - this->alpha_) * u_ncgt_a;
-            ho_action = this->alpha_ * u_ncgt_h;
+            // ho_action = this->alpha_ * u_ncgt_h;
             // acs_action = u_ncgt_a;
-            // ho_action = u_ncgt_h; 
+            ho_action = u_ncgt_h; 
             if (this->override_ho_wrench_)
             {
                 acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
