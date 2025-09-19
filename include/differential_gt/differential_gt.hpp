@@ -89,7 +89,8 @@ private:
     double cos_theta_coop_ = 0.0;           // Cosine similarity value for cooperative action
     double cos_theta_nc_ = 0.0;             // Cosine similarity value for non-cooperative action
     int override_value_ = 0;                // Value to manually override the arbitration decision (1 to override, 0 to not override)
-    double feedback_scaling_factor_;        // Scaling factor for feedback force)
+    double feedback_scaling_factor_;        // Scaling factor for feedback force
+    double assistance_factor_;              // Factor to increase assistance in non-cooperative GT
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;
@@ -158,6 +159,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr ho_cgt_wrench_pub_;
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr acs_cgt_wrench_pub_;
     rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr decision_pub_;
+    
 
     geometry_msgs::msg::PoseStamped ref_ho_msg_;
     geometry_msgs::msg::PoseStamped ref_acs_msg_;
@@ -169,5 +171,10 @@ private:
     std_msgs::msg::Int32 decision_msg_;
     //?------------------------------------------------------------------------------------
 
+    // New method to compute feedback force
+    void ComputeFeedbackForce(const Eigen::VectorXd &ho_action, const Eigen::VectorXd &acs_action);
+
+    // Messages to publish feedback force
+    geometry_msgs::msg::WrenchStamped feedback_force_msg_;
 };
 #endif // DIFFERENTIAL_GT_HPP

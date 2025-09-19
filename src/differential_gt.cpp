@@ -17,7 +17,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<std::string>("ho_wrench_pub_topic", "/differential_gt/wrench_from_ho");
     this->declare_parameter<std::string>("pose_topic", "/admittance_controller/pose_debug");
     this->declare_parameter<std::string>("twist_topic", "/admittance_controller/end_effector_twist");
-    this->declare_parameter<std::string>("feedback_force_pub_topic", "/admittance_controller/force_measurements");
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("end_effector", "tool0");
     this->declare_parameter<double>("switch_on_point", 0.71);
@@ -38,39 +37,28 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->switch_off_point_ = this->get_parameter("switch_off_point").as_double();
     this->publishing_rate_ = this->get_parameter("publishing_rate").as_double();
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
-    this->feedback_force_pub_topic_ = this->get_parameter("feedback_force_pub_topic").as_string();
     this->feedback_scaling_factor_ = this->get_parameter("feedback_scaling_factor").as_double();
 
     // Initialize publishers and subscribers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
     this->wrench_from_ho_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_pub_topic_, 10);
-    this->feedback_force_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->feedback_force_pub_topic_, 10);
+    this->feedback_force_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/admittance_controller/force_measurements", 10);
 
-    this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
-        this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
+    this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
 
-    this->pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        this->pose_topic_, 10, std::bind(&DifferentialGT::PoseCallback, this, std::placeholders::_1));
+    this->pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(this->pose_topic_, 10, std::bind(&DifferentialGT::PoseCallback, this, std::placeholders::_1));
     
-    this->twist_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-        this->twist_topic_, 10, std::bind(&DifferentialGT::TwistCallback, this, std::placeholders::_1));
+    this->twist_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(this->twist_topic_, 10, std::bind(&DifferentialGT::TwistCallback, this, std::placeholders::_1));
 
-    this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
-        "/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
+    this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>("/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
 
-    this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
-        "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
+    this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>("/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
     
-    this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
+    this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
 
-    // Add a subscriber for the /safety_coefficient topic
-    this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-        "/safety_coefficient", 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
+    this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>("/safety_coefficient", 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
 
-    // Subscribe to joystick/override topic for manual override
-    this->override_sub_ = this->create_subscription<std_msgs::msg::Int32>(
-        "joystick/override", 10, std::bind(&DifferentialGT::OverrideCallback, this, std::placeholders::_1));
+    this->override_sub_ = this->create_subscription<std_msgs::msg::Int32>("joystick/override", 10, std::bind(&DifferentialGT::OverrideCallback, this, std::placeholders::_1));
 
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
@@ -79,10 +67,9 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     // TODO Parametrize these matrices
     this->SetCostMatrices();
 
-
     //Feedback scaling factor
     this->feedback_scaling_factor_ = 0.5; 
-
+    this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
 
@@ -96,7 +83,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->noncoop_gt_.setSysParams(this->A_, this->B_);
 
     //* Set initial value of alpha for arbitration
-    this->alpha_ = 0.01; // Default value, can be changed later
+    this->alpha_ = 0.01; 
     this->coop_gt_.setAlpha(this->alpha_);
     
     // Setup game theory objects with cost matrices
@@ -105,15 +92,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     //! As in Pedrocchi script we set Qh_ and Qr_ for the non-cooperative GT as follows
     this->coop_gt_.getCostMatrices(this->Qh_, this->Qr_, this->Rh_, this->Rr_);
 
-    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_*5.0, this->Rh_, this->Rr_);
-    // Add *30 to Qr to make the ACS stiffer in the non-cooperative case (strong assistance)
-    //!--------------------------------------------------------------------------------
+    this->noncoop_gt_.setCostsParams(this->Qh_, this->Qr_*this->assistance_factor_, this->Rh_, this->Rr_);
     
     // Precompute the non-cooperative gains (as long as matrices are constant)
     this->noncoop_gt_.computeNonCooperativeGains();
     this->noncoop_gt_.getNonCooperativeGains(this->K_ncgt_h_, this->K_ncgt_a_);
     
-
     // Initialize timer
     this->timer_ = this->create_wall_timer(
         std::chrono::milliseconds(static_cast<int>(1000.0 / this->publishing_rate_)),
@@ -302,19 +286,40 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
 }
 
 //----------------------------------------------------
+// ComputeFeedbackForce
+void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, const Eigen::VectorXd &acs_action)
+{
+    // Compute the feedback force as the difference between ho_action and acs_action
+    Eigen::Vector3d feedback_force = acs_action - ho_action;
+
+    // Scale the feedback force
+    feedback_force *= this->feedback_scaling_factor_;
+
+    // Populate the feedback force message
+    this->feedback_force_msg_.header.stamp = this->now();
+    this->feedback_force_msg_.header.frame_id = this->base_frame_;
+    this->feedback_force_msg_.wrench.force.x = feedback_force[0];
+    this->feedback_force_msg_.wrench.force.y = feedback_force[1];
+    this->feedback_force_msg_.wrench.force.z = feedback_force[2];
+    this->feedback_force_msg_.wrench.torque.x = 0.0;
+    this->feedback_force_msg_.wrench.torque.y = 0.0;
+    this->feedback_force_msg_.wrench.torque.z = 0.0;
+
+    // Publish the feedback force
+    this->feedback_force_pub_->publish(this->feedback_force_msg_);
+}
+
+//----------------------------------------------------
 // ComputeACSAction
 void DifferentialGT::ComputeACSAction()
 {
-
     // Set the reference trajectory for the HO and ACS
     Eigen::VectorXd ref_h;
     Eigen::VectorXd ref_r;
     ref_h.resize(3);
     ref_r.resize(3);
 
-
     this->ComputeReferences(ref_h, ref_r);
-
 
     //! These lines are for debugging --------------------
     this->ref_ho_msg_.header.stamp = this->now();
@@ -339,7 +344,6 @@ void DifferentialGT::ComputeACSAction()
     this->coop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
     this->noncoop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
 
-
     // Get the references for the cooperative and non-cooperative game
     Eigen::VectorXd ref_cgt = this->coop_gt_.getReference();
     Eigen::VectorXd ref_ncgt_h, ref_ncgt_a;
@@ -356,14 +360,11 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd u_ncgt_h = -this->K_ncgt_h_ * (current_state - ref_ncgt_h);
     Eigen::VectorXd u_ncgt_a = -this->K_ncgt_a_ * (current_state - ref_ncgt_a);
 
-
     // Get the real wrench applied by the HO
     Eigen::VectorXd uh_real(3);
     uh_real << this->wrench_from_ho_msg_.wrench.force.x,
                 this->wrench_from_ho_msg_.wrench.force.y,
                 this->wrench_from_ho_msg_.wrench.force.z;
-
-
 
     //! These lines are for debugging --------------------
     this->cos_theta_msg_.data.clear();
@@ -397,11 +398,10 @@ void DifferentialGT::ComputeACSAction()
     this->acs_cgt_wrench_msg_.wrench.force.y = u_cgt_a[1];
     this->acs_cgt_wrench_msg_.wrench.force.z = u_cgt_a[2];
     //!---------------------------------------------------
- 
-    Eigen::VectorXd acs_action(3); // Action to be published
-    std::cout << "ACS Action:" << acs_action.transpose() << std::endl;
-    Eigen::VectorXd ho_action(3); // Action from the HO
 
+    Eigen::VectorXd acs_action(3); // Action to be published
+    Eigen::VectorXd ho_action(3); // Action from the HO
+    Eigen::VectorXd feedback_force(3); // Feedback force to be sent to the master device
 
     // Check the manual override value
     if (this->override_value_ == 1) 
@@ -410,7 +410,6 @@ void DifferentialGT::ComputeACSAction()
     } 
     else 
     {
-
         // ARBITRATION ------------------------------------------
 
         this->arbitration_.CosineSimilarityHysteresis(
@@ -418,7 +417,7 @@ void DifferentialGT::ComputeACSAction()
             this->switch_on_point_, this->switch_off_point_
         );
 
-        // Add a blending factor for smooth transitions
+        // Add a blending factor for smooth transitions between modes
         double blending_factor_ = 0.0; // Starts at 0 (fully NC) and transitions to 1 (fully C)
         double blending_rate_ = 0.1;   // Rate of blending per iteration (adjust as needed)
 
@@ -428,8 +427,7 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) +
-                         (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_cgt_h;
 
@@ -437,6 +435,9 @@ void DifferentialGT::ComputeACSAction()
             {
                 acs_action += u_cgt_h;
             }
+
+            // Compute and publish feedback force
+            this->ComputeFeedbackForce(ho_action, acs_action);
         }
         else // Non-cooperative mode
         {
@@ -444,8 +445,7 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) +
-                         (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_ncgt_h;
 
@@ -455,6 +455,7 @@ void DifferentialGT::ComputeACSAction()
             }
         }
     }
+
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
     this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
@@ -473,7 +474,6 @@ void DifferentialGT::ComputeACSAction()
     this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
     this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
     this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
-
 }
 
 //----------------------------------------------------
