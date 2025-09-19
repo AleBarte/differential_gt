@@ -4,7 +4,7 @@
 //*------- Constructor --------*//
 //*----------------------------*//
 
-DifferentialGT::DifferentialGT(const std::string &node_name) 
+DifferentialGT::DifferentialGT(const std::string &node_name)
     : Node(node_name),
       tf_buffer_(this->get_clock()),
       tf_listener_(std::make_shared<tf2_ros::TransformListener>(tf_buffer_)),
@@ -17,12 +17,14 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<std::string>("ho_wrench_pub_topic", "/differential_gt/wrench_from_ho");
     this->declare_parameter<std::string>("pose_topic", "/admittance_controller/pose_debug");
     this->declare_parameter<std::string>("twist_topic", "/admittance_controller/end_effector_twist");
+    this->declare_parameter<std::string>("feedback_force_pub_topic", "/admittance_controller/force_measurements");
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("end_effector", "tool0");
     this->declare_parameter<double>("switch_on_point", 0.71);
     this->declare_parameter<double>("switch_off_point", 0.0);
     this->declare_parameter<double>("publishing_rate", 500.0);
     this->declare_parameter<bool>("override_ho_wrench", false);
+    this->declare_parameter<double>("feedback_scaling_factor", 0.5); 
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
@@ -36,10 +38,13 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->switch_off_point_ = this->get_parameter("switch_off_point").as_double();
     this->publishing_rate_ = this->get_parameter("publishing_rate").as_double();
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
+    this->feedback_force_pub_topic_ = this->get_parameter("feedback_force_pub_topic").as_string();
+    this->feedback_scaling_factor_ = this->get_parameter("feedback_scaling_factor").as_double();
 
     // Initialize publishers and subscribers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
     this->wrench_from_ho_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_pub_topic_, 10);
+    this->feedback_force_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->feedback_force_pub_topic_, 10);
 
     this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
         this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
@@ -73,6 +78,10 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     // Matrices for game theory calculations
     // TODO Parametrize these matrices
     this->SetCostMatrices();
+
+
+    //Feedback scaling factor
+    this->feedback_scaling_factor_ = 0.5; 
 
 
     //* Complete game theory initialization
@@ -409,24 +418,40 @@ void DifferentialGT::ComputeACSAction()
             this->switch_on_point_, this->switch_off_point_
         );
 
-        if (this->decision_ == 0) // Use cooperative action
+        // Add a blending factor for smooth transitions
+        double blending_factor_ = 0.0; // Starts at 0 (fully NC) and transitions to 1 (fully C)
+        double blending_rate_ = 0.1;   // Rate of blending per iteration (adjust as needed)
+
+        if (this->decision_ == 0) // Cooperative mode
         {
-            acs_action = (1 - this->alpha_) * u_cgt_a;
-            ho_action = u_cgt_h; // Action from the HO in cooperative game
+            // Gradually increase the blending factor
+            blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
+
+            // Blend the ACS force between NC and C
+            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) +
+                         (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+
+            ho_action = u_cgt_h;
+
             if (this->override_ho_wrench_)
             {
-                acs_action += u_cgt_h; // Add the cooperative action for the first agent
+                acs_action += u_cgt_h;
             }
         }
-        else // Use non-cooperative action
+        else // Non-cooperative mode
         {
-            acs_action = (1 - this->alpha_) * u_ncgt_a;
-            // ho_action = this->alpha_ * u_ncgt_h;
-            // acs_action = u_ncgt_a;
-            ho_action = u_ncgt_h; 
+            // Gradually decrease the blending factor
+            blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
+
+            // Blend the ACS force between NC and C
+            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) +
+                         (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+
+            ho_action = u_ncgt_h;
+
             if (this->override_ho_wrench_)
             {
-                acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
+                acs_action += u_ncgt_h;
             }
         }
     }

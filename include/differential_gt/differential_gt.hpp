@@ -49,6 +49,7 @@ private:
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_force_pub_; // Publisher for feedback force
 
     // Subscribers
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;             // Subscribes to the force commanded by the joystick
@@ -87,7 +88,8 @@ private:
     double cos_theta_ = 0.0;                // Cosine similarity value
     double cos_theta_coop_ = 0.0;           // Cosine similarity value for cooperative action
     double cos_theta_nc_ = 0.0;             // Cosine similarity value for non-cooperative action
-    int override_value_ = 0;               // Value to manually override the arbitration decision (1 to override, 0 to not override)
+    int override_value_ = 0;                // Value to manually override the arbitration decision (1 to override, 0 to not override)
+    double feedback_scaling_factor_;        // Scaling factor for feedback force)
 
     // Matrices for game theory calculations
     Eigen::MatrixXd Qhh_;
