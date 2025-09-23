@@ -68,7 +68,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->SetCostMatrices();
 
     //Feedback scaling factor
-    this->feedback_scaling_factor_ = 1; // Factor to scale the feedback force sent to the master device
+    this->feedback_scaling_factor_ = 1;     // Factor to scale the feedback force sent to the master device
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
@@ -442,7 +442,8 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            // acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_cgt_h;
 
@@ -452,7 +453,7 @@ void DifferentialGT::ComputeACSAction()
             }
 
             // Compute and publish feedback force
-            this->ComputeFeedbackForce(ho_action, acs_action);
+            this->ComputeFeedbackForce(ho_action, u_ncgt_a);
         }
         else // Non-cooperative mode
         {
@@ -460,7 +461,8 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            // acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_ncgt_h;
 
