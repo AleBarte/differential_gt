@@ -68,7 +68,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->SetCostMatrices();
 
     //Feedback scaling factor
-    this->feedback_scaling_factor_ = 0.8; 
+    this->feedback_scaling_factor_ = 1; // Factor to scale the feedback force sent to the master device
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
@@ -289,18 +289,33 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
 // ComputeFeedbackForce
 void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, const Eigen::VectorXd &acs_action)
 {
-    // Compute the feedback force as the difference between ho_action and acs_action
-    Eigen::Vector3d feedback_force = acs_action - ho_action;
+    // Compute the magnitudes of the human and ACS wrenches
+    double human_magnitude = ho_action.norm();
+    double acs_magnitude = acs_action.norm();
 
-    // Scale the feedback force
-    feedback_force *= this->feedback_scaling_factor_;
+    // If wrenches are too small, do not compute feedback force
+    if (human_magnitude < 1e-6 || acs_magnitude < 1e-6)
+    {
+        return;
+    }
+
+    // Compute the misalignment and feedback force
+    Eigen::Vector3d acs_direction = acs_action / acs_magnitude;
+    double projection = ho_action.dot(acs_direction);
+    Eigen::Vector3d misalignment = ho_action - projection * acs_direction;
+    Eigen::Vector3d feedback_force = -this->feedback_scaling_factor_ * misalignment;
+
+    // Apply a low-pass filter to smooth the feedback force
+    static Eigen::Vector3d filtered_feedback_force = Eigen::Vector3d::Zero(); // Persistent state
+    double smoothing_factor = 0.01; // Adjust this value for more or less smoothing (0 < smoothing_factor < 1)
+    filtered_feedback_force = smoothing_factor * feedback_force + (1.0 - smoothing_factor) * filtered_feedback_force;
 
     // Populate the feedback force message
     this->feedback_force_msg_.header.stamp = this->now();
     this->feedback_force_msg_.header.frame_id = this->base_frame_;
-    this->feedback_force_msg_.wrench.force.x = feedback_force[0];
-    this->feedback_force_msg_.wrench.force.y = feedback_force[1];
-    this->feedback_force_msg_.wrench.force.z = feedback_force[2];
+    this->feedback_force_msg_.wrench.force.x = filtered_feedback_force[0];
+    this->feedback_force_msg_.wrench.force.y = filtered_feedback_force[1];
+    this->feedback_force_msg_.wrench.force.z = filtered_feedback_force[2];
     this->feedback_force_msg_.wrench.torque.x = 0.0;
     this->feedback_force_msg_.wrench.torque.y = 0.0;
     this->feedback_force_msg_.wrench.torque.z = 0.0;
