@@ -68,7 +68,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->SetCostMatrices();
 
     //Feedback scaling factor
-    this->feedback_scaling_factor_ = 0.5; 
+    this->feedback_scaling_factor_ = 0.8; 
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
