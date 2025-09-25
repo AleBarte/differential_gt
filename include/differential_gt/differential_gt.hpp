@@ -121,17 +121,22 @@ private:
     Eigen::MatrixXd K_ncgt_h_;
 
     // Parameters
-    std::string ho_wrench_topic_;           // Topic from which the HO wrench is read
-    std::string acs_wrench_pub_topic_;      // Topic on which the ACS wrench is published
-    std::string pose_topic_;                // Topic from which EE pose is read
-    std::string twist_topic_;               // Topic from which EE twist is read
-    std::string ho_wrench_pub_topic_;       // Topic on which the HO wrench is published
-    std::string base_frame_;                // Base frame for the robot, can be set as a parameter
-    std::string end_effector_;              // End-effector frame for the robot, can be set as a paraeter
-    double switch_on_point_;                // Switch on point for Cosine Similarity Hysteresis
-    double switch_off_point_;               // Switch off point for Cosien Similarity Hysteresis
-    double publishing_rate_;                // Default publishing rate in seconds
-    bool override_ho_wrench_;               // Flag to override the HO wrench with ACS action
+    std::string ho_wrench_topic_;                // Topic from which the HO wrench is read
+    std::string acs_wrench_pub_topic_;           // Topic on which the ACS wrench is published
+    std::string pose_topic_;                     // Topic from which EE pose is read
+    std::string twist_topic_;                    // Topic from which EE twist is read
+    std::string ho_wrench_pub_topic_;            // Topic on which the HO wrench is published
+    std::string twist_from_safety_filter_topic_; // Topic from which twist from safety filter is read
+    std::string buttons_topic_;                  // Topic from which joystick button states are read
+    std::string acs_reference_point_topic_;      // Topic from which ACS reference point is read
+    std::string safety_coefficient_topic_;       // Topic from which safety coefficient is read
+    std::string override_topic_;                 // Topic from which override commands are read
+    std::string base_frame_;                     // Base frame for the robot, can be set as a parameter
+    std::string end_effector_;                   // End-effector frame for the robot, can be set as a parameter
+    double switch_on_point_;                     // Switch on point for Cosine Similarity Hysteresis
+    double switch_off_point_;                    // Switch off point for Cosine Similarity Hysteresis
+    double publishing_rate_;                     // Default publishing rate in seconds
+    bool override_ho_wrench_;                    // Flag to override the HO wrench with ACS action
 
     // TF2
     tf2_ros::Buffer tf_buffer_;
@@ -148,7 +153,7 @@ private:
     Eigen::Vector3d initial_position_; // Initial position of the end effector
 
     Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
-    Eigen::VectorXd ho_ref_; // Reference trajectory for the HO
+    Eigen::VectorXd ho_ref_;  // Reference trajectory for the HO
 
     //? Debugging ------------------------------------------------------------------------
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr ref_ho_pub_;

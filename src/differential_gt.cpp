@@ -19,6 +19,11 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<std::string>("twist_topic", "/admittance_controller/end_effector_twist");
     this->declare_parameter<std::string>("base_frame", "base_link");
     this->declare_parameter<std::string>("end_effector", "tool0");
+    this->declare_parameter<std::string>("twist_from_safety_filter_topic", "/safety_filter/twist");
+    this->declare_parameter<std::string>("buttons_topic", "/falcon0/buttons");
+    this->declare_parameter<std::string>("acs_reference_point_topic", "/ACS_reference_point");
+    this->declare_parameter<std::string>("safety_coefficient_topic", "/safety_coefficient");
+    this->declare_parameter<std::string>("override_topic", "joystick/override");
     this->declare_parameter<double>("switch_on_point", 0.71);
     this->declare_parameter<double>("switch_off_point", 0.0);
     this->declare_parameter<double>("publishing_rate", 500.0);
@@ -33,34 +38,33 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->twist_topic_ = this->get_parameter("twist_topic").as_string();
     this->base_frame_ = this->get_parameter("base_frame").as_string();
     this->end_effector_ = this->get_parameter("end_effector").as_string();
+    this->twist_from_safety_filter_topic_ = this->get_parameter("twist_from_safety_filter_topic").as_string();
+    this->buttons_topic_ = this->get_parameter("buttons_topic").as_string();
+    this->acs_reference_point_topic_ = this->get_parameter("acs_reference_point_topic").as_string();
+    this->safety_coefficient_topic_ = this->get_parameter("safety_coefficient_topic").as_string();
+    this->override_topic_ = this->get_parameter("override_topic").as_string();
     this->switch_on_point_ = this->get_parameter("switch_on_point").as_double();
     this->switch_off_point_ = this->get_parameter("switch_off_point").as_double();
     this->publishing_rate_ = this->get_parameter("publishing_rate").as_double();
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
     this->feedback_scaling_factor_ = this->get_parameter("feedback_scaling_factor").as_double();
 
-    // Initialize publishers and subscribers
+    // Initialize publishers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
     this->wrench_from_ho_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_pub_topic_, 10);
     this->feedback_force_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>("/admittance_controller/force_measurements", 10);
 
+    // Initialize subscribers
     this->wrench_from_ho_sub_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(this->ho_wrench_topic_, 10, std::bind(&DifferentialGT::WrenchFromHOCallback, this, std::placeholders::_1));
-
     this->pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(this->pose_topic_, 10, std::bind(&DifferentialGT::PoseCallback, this, std::placeholders::_1));
-    
     this->twist_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(this->twist_topic_, 10, std::bind(&DifferentialGT::TwistCallback, this, std::placeholders::_1));
+    this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(this->twist_from_safety_filter_topic_, 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
+    this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>( this->buttons_topic_, 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
+    this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(this->acs_reference_point_topic_, 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
+    this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>(this->safety_coefficient_topic_, 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
+    this->override_sub_ = this->create_subscription<std_msgs::msg::Int32>(this->override_topic_, 10, std::bind(&DifferentialGT::OverrideCallback, this, std::placeholders::_1));
 
-    this->twist_from_safety_filter_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>("/safety_filter/twist", 10, std::bind(&DifferentialGT::TwistFromSafetyFilterCallback, this, std::placeholders::_1));
-
-    this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>("/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
-    
-    this->acs_reference_point_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/ACS_reference_point", 10, std::bind(&DifferentialGT::ACSReferencePointCallback, this, std::placeholders::_1));
-
-    this->safety_coefficient_sub_ = this->create_subscription<std_msgs::msg::Float32>("/safety_coefficient", 10, std::bind(&DifferentialGT::SafetyCoefficientCallback, this, std::placeholders::_1));
-
-    this->override_sub_ = this->create_subscription<std_msgs::msg::Int32>("joystick/override", 10, std::bind(&DifferentialGT::OverrideCallback, this, std::placeholders::_1));
-
-    // Arbitration
+    // Arbitration initialization
     this->arbitration_ = Arbitration(0.5);
 
     // Matrices for game theory calculations
@@ -72,7 +76,6 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
-
     
     // System Matrices
     // TODO: Compute these from the parameters passed to the admittance controller
@@ -166,10 +169,9 @@ bool DifferentialGT::Startup()
     return true;
 }
 
-
 //----------------------------------------------------
-// ButtonsCallback
-void DifferentialGT::ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg) // Used only with falcon joystick
+// ButtonsCallback - Used only with falcon joystick
+void DifferentialGT::ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
 {
     if (!this->is_initialized_)
         return;
@@ -256,15 +258,13 @@ void DifferentialGT::ACSReferencePointCallback(const geometry_msgs::msg::PoseSta
 // SafetyCoefficientCallback
 void DifferentialGT::SafetyCoefficientCallback(const std_msgs::msg::Float32::SharedPtr msg)
 {
-    // Update alpha with the value received from the /safety_coefficient topic
     this->alpha_ = msg->data;
     this->coop_gt_.setAlpha(this->alpha_); // Update the alpha value in the cooperative game theory object
-    // RCLCPP_INFO(this->get_logger(), "Updated alpha to: %f", this->alpha_);
 }
 
 //----------------------------------------------------
-// OverrideCallback
-void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg) //Used only with wii remote
+// OverrideCallback - Used only with wii remote
+void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg) 
 {
     if (!this->is_initialized_)
     {
@@ -272,9 +272,8 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
     }
     
     this->override_value_ = msg->data;
-    // RCLCPP_INFO(this->get_logger(), "Received override value: %d", this->override_value_);
 
-    // Set button_pressed_ based on the override value
+    // Set button_pressed_ based on the override value (to emulate falcon joystick)
     if (this->override_value_ == 2)
     {
         this->button_pressed_ = true;
@@ -306,8 +305,8 @@ void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, cons
     Eigen::Vector3d feedback_force = -this->feedback_scaling_factor_ * misalignment;
 
     // Apply a low-pass filter to smooth the feedback force
-    static Eigen::Vector3d filtered_feedback_force = Eigen::Vector3d::Zero(); // Persistent state
-    double smoothing_factor = 0.01; // Adjust this value for more or less smoothing (0 < smoothing_factor < 1)
+    static Eigen::Vector3d filtered_feedback_force = Eigen::Vector3d::Zero(); 
+    double smoothing_factor = 0.01; // Adjust for more or less smoothing
     filtered_feedback_force = smoothing_factor * feedback_force + (1.0 - smoothing_factor) * filtered_feedback_force;
 
     // Populate the feedback force message
@@ -433,8 +432,8 @@ void DifferentialGT::ComputeACSAction()
         );
 
         // Add a blending factor for smooth transitions between modes
-        double blending_factor_ = 0.0; // Starts at 0 (fully NC) and transitions to 1 (fully C)
-        double blending_rate_ = 0.1;   // Rate of blending per iteration (adjust as needed)
+        double blending_factor_ = 0.0; // Starts at 0 (NC) and transitions to 1 (C)
+        double blending_rate_ = 0.1;   // Rate of blending
 
         if (this->decision_ == 0) // Cooperative mode
         {
@@ -442,7 +441,6 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
 
             // Blend the ACS force between NC and C
-            // acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
             acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_cgt_h;
@@ -453,7 +451,7 @@ void DifferentialGT::ComputeACSAction()
             }
 
             // Compute and publish feedback force
-            this->ComputeFeedbackForce(ho_action, u_ncgt_a);
+            this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
         }
         else // Non-cooperative mode
         {
@@ -461,10 +459,9 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
 
             // Blend the ACS force between NC and C
-            // acs_action = blending_factor_ * ((1 - this->alpha_) * u_cgt_a) + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
             acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
-            ho_action = u_ncgt_h;
+            ho_action = this->alpha_ * u_ncgt_h;
 
             if (this->override_ho_wrench_)
             {
@@ -644,7 +641,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         this->z_ = this->F_ * this->z_ + this->G_ * uh; // Update the state z
         
-        this->ho_ref_ = this->ho_ref_ + dt * this->z_; // Update the reference for the HO
+        this->ho_ref_ = this->ho_ref_ + dt * this->z_;  // Update the reference for the HO
         
         ref_r << this->acs_ref_[0],
                  this->acs_ref_[1],
