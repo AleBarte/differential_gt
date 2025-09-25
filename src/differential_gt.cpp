@@ -461,7 +461,7 @@ void DifferentialGT::ComputeACSAction()
             // Blend the ACS force between NC and C
             acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
-            ho_action = this->alpha_ * u_ncgt_h;
+            ho_action = u_ncgt_h;
 
             if (this->override_ho_wrench_)
             {

@@ -49,7 +49,7 @@ private:
     // Publishers
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
     rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_force_pub_; // Publisher for feedback force
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_force_pub_;  // Publisher for feedback force
 
     // Subscribers
     rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_sub_;             // Subscribes to the force commanded by the joystick
