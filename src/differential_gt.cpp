@@ -441,7 +441,7 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_cgt_h;
 
@@ -451,7 +451,7 @@ void DifferentialGT::ComputeACSAction()
             }
 
             // Compute and publish feedback force
-            this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+            // this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
         }
         else // Non-cooperative mode
         {
@@ -459,7 +459,7 @@ void DifferentialGT::ComputeACSAction()
             blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
 
             // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+            acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
             ho_action = u_ncgt_h;
 
