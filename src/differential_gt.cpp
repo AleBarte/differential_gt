@@ -72,7 +72,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->SetCostMatrices();
 
     //Feedback scaling factor
-    this->feedback_scaling_factor_ = 1;     // Factor to scale the feedback force sent to the master device
+    this->feedback_scaling_factor_ = 0.8;     // Factor to scale the feedback force sent to the master device
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
@@ -451,7 +451,7 @@ void DifferentialGT::ComputeACSAction()
             }
 
             // Compute and publish feedback force
-            // this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+            this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
         }
         else // Non-cooperative mode
         {
