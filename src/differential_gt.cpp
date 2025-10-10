@@ -64,8 +64,12 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
 
-    this->target_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/goal_position", 10, std::bind(&DifferentialGT::TargetCallback, this, std::placeholders::_1)
+    this->target_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+        "/", 10, std::bind(&DifferentialGT::TargetCallback, this, std::placeholders::_1) //TODO: Change with your topic name for target
+    );
+
+    this->obstacles_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+        "/", 10, std::bind(&DifferentialGT::ObstaclesCallback, this, std::placeholders::_1) //TODO: Change with your topic name
     );
      
 
@@ -99,7 +103,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         std::vector<Eigen::MatrixXd> matrices = {this->Qhh_, this->Qhr_, this->Qrh_, this->Qrr_,
                                             this->Rh_, this->Rr_, this->Qh_, this->Qr_, this->Rhh_, this->Rhr_, this->Rrh_, this->Rrr_};
 
-        std::string save_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->save_matrices_ + ".txt";
+        std::string save_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->save_matrices_ + ".txt"; //TODO: Change Path here on your machine
         Utils::saveMultipleMatrices(save_path, matrices);
     }
 
@@ -251,16 +255,25 @@ void DifferentialGT::TwistFromSafetyFilterCallback(const geometry_msgs::msg::Twi
 
 //----------------------------------------------------
 // TargetCallback
-void DifferentialGT::TargetCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+void DifferentialGT::TargetCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
     if (!this->is_initialized_)
     {
         return;
     }
 
-    this->goal_position_[0] = msg->pose.position.x;
-    this->goal_position_[1] = msg->pose.position.y;
-    this->goal_position_[2] = msg->pose.position.z;
+    // TODO: Define your logic for storing goal information. For the code to work, only goal position is necessary.
+    // Use the variable this->goal_position_ (Eigen::VectorXd) to store the goal position.
+}
+
+void DifferentialGT::ObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+        return;
+    // TODO: Define your logic for storing obstacles info. For the code to work obstacles positions and radii are needed.
+    // Use variable this->obstacle_vec_ (vector<Eigen::VectorXd>) to store the obstacles positions
+    // Use variable this->obstacle_radius_vec_ (vector<double>) to store obstacles radii
+
 }
 
 void DifferentialGT::ComputeACSAction()
@@ -296,8 +309,8 @@ void DifferentialGT::ComputeACSAction()
     this->coop_gt_.computeCooperativeGains(this->alpha_); //! This line here also sets alpha
     this->K_cgt_ = this->coop_gt_.getCooperativeGains();
 
-    this->coop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
-    this->noncoop_gt_.setPosReference(ref_h, ref_r); //TODO Change with a complete reference
+    this->coop_gt_.setPosReference(ref_h, ref_r); 
+    this->noncoop_gt_.setPosReference(ref_h, ref_r);
 
 
     // Get the references for the cooperative and non-cooperative game
@@ -325,7 +338,7 @@ void DifferentialGT::ComputeACSAction()
 
 
 
-    //! These lines are for debugging --------------------
+    //? These lines are for debugging --------------------
     this->cos_theta_msg_.data.clear();
     this->cos_theta_msg_.data.push_back(this->cos_theta_);
     this->cos_theta_msg_.data.push_back(this->cos_theta_coop_);
@@ -356,53 +369,25 @@ void DifferentialGT::ComputeACSAction()
     this->acs_cgt_wrench_msg_.wrench.force.x = u_cgt_a[0];
     this->acs_cgt_wrench_msg_.wrench.force.y = u_cgt_a[1];
     this->acs_cgt_wrench_msg_.wrench.force.z = u_cgt_a[2];
-    //!---------------------------------------------------
+    //?---------------------------------------------------
  
-    //! Here you can force the decision variable to either 0 or 1 for testing
-    // this->decision_ = 0;
-    //!----------------------------------------------------------------------
     Eigen::VectorXd acs_action(3); // Action to be published
     Eigen::VectorXd opt_ho_action(3); // Action from the HO
     if (this->decision_ == 0) // Use cooperative action
     {
         acs_action = u_cgt_a;
         opt_ho_action = u_cgt_h; // Action from the HO in cooperative game
-        // if (this->override_ho_wrench_)
-        // {
-        //     acs_action += u_cgt_h; // Add the cooperative action for the first agent
-        // }
     }
     else // Use non-cooperative action
     {
         acs_action = u_ncgt_a;
         opt_ho_action = u_ncgt_h; // Action from the HO in non-cooperative game
-        // if (this->override_ho_wrench_)
-        // {
-        //     acs_action += u_ncgt_h; // Add the non-cooperative action for the first agent
-        // }
     }
-
-    //TODO: Matrix tuning
-    // Eigen::MatrixXd damping = Eigen::MatrixXd::Identity(3, 3) * 50.0; // Damping matrix  //TODO Find matrix with equivalent effect for NCGT
-    // Eigen::VectorXd damping_action = - damping * this->linear_velocity_; // Damping action
-
-    // if (this->decision_ == 0)
-    // {
-    //     damping_action = Eigen::VectorXd::Zero(3); // No damping action in cooperative game
-    //     // this->stored_energy_ = 0.7 * this->stored_energy_; // Reduce the stored energy in cooperative game
-    // }
 
     double ct = std::max(0.0, std::min(1.0, this->cos_theta_));
     double neg_cosine = std::min(0.0, this->cos_theta_);
     this->stored_energy_ = (1.0 - ct) * this->stored_energy_ - neg_cosine; // Energy dissipated by the damping action
     this->stored_energy_ = std::max(0.0, std::min(10.0, this->stored_energy_)); // Ensure stored energy is non-negative
-
-
-    // ARBITRATION -------------------
-    // Select Game
-    // Select alpha
-    
-    //________________________________
 
     // Create the WrenchStamped message to publish
     this->wrench_from_acs_msg_.header.stamp = this->now();
@@ -442,12 +427,6 @@ void DifferentialGT::ComputeACSAction()
         this->feedback_wrench_msg_.wrench.force.x = acs_action[0];
         this->feedback_wrench_msg_.wrench.force.y = acs_action[1];
         this->feedback_wrench_msg_.wrench.force.z = acs_action[2];
-        // this->feedback_wrench_msg_.wrench.force.x = 100.0 * (this->acs_ref_[0] - this->position_[0]);
-        // this->feedback_wrench_msg_.wrench.force.y = 100.0 * (this->acs_ref_[1] - this->position_[1]); 
-        // this->feedback_wrench_msg_.wrench.force.z = 100.0 * (this->acs_ref_[2] - this->position_[2]);
-        // this->feedback_wrench_msg_.wrench.force.x = this->filtered_acs_wrench_[0];
-        // this->feedback_wrench_msg_.wrench.force.y = this->filtered_acs_wrench_[1];
-        // this->feedback_wrench_msg_.wrench.force.z = this->filtered_acs_wrench_[2]; 
         this->feedback_wrench_msg_.wrench.torque.x = 0.0;
         this->feedback_wrench_msg_.wrench.torque.y = 0.0;
         this->feedback_wrench_msg_.wrench.torque.z = 0.0;
@@ -510,7 +489,6 @@ void DifferentialGT::SetSystemMatrices()
 void DifferentialGT::SetCostMatrices()
 {
 
-    // TODO Write better this method. Provide clear division between cooperative and non-cooperative GT cost matrices.
     this->Qhh_.resize(6, 6);
     this->Qhr_.resize(6, 6);
     this->Qrr_.resize(6, 6);
@@ -570,7 +548,7 @@ void DifferentialGT::SetCostMatrices()
         //!--------------------------------------------------------------------------------
     } else {
         // Load matrices from a file
-        std::string load_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->load_matrices_ + ".txt";
+        std::string load_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->load_matrices_ + ".txt"; //TODO: Change path here on your machine
         std::vector<Eigen::MatrixXd> matrices;
         matrices = Utils::loadMultipleMatrices(load_path);
         
@@ -661,6 +639,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     Eigen::VectorXd current_state = Eigen::VectorXd::Zero(6);
     Eigen::VectorXd ref_ho = Eigen::VectorXd::Zero(6);
     Eigen::VectorXd ref_acs = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd goal(3);
     ref_h.resize(3);
     ref_r.resize(3);
 
@@ -668,55 +647,10 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     ref_ho.segment(0, 3)       = this->ho_ref_;
     ref_acs.segment(0, 3)      = this->acs_ref_;
 
-    // Introduce a Goal and an Obstacle
-    //! Warning: Hardcoded values -----------------------------------------------------------------
-    Eigen::VectorXd goal(3);
-    Eigen::VectorXd goal1(3);
-    Eigen::VectorXd goal2(3);
-    Eigen::VectorXd goal3(3); // This is the third goal position, can be set as a parameter
-    Eigen::VectorXd obstacle(3);
-    Eigen::VectorXd obstacle2(3);
-
-    std::vector<Eigen::VectorXd> obstacle_vec;
-    std::vector<double> obstacle_radius_vec;
+    // Introduce a Goal and an Obstacles
     std::vector<Eigen::VectorXd> goal_vec;
 
-    //? Positioning experiment ---------------------------------------------------------
-    // goal1 << 0.40, 0.49, 0.3;
-    // goal2 << -0.2, 0.69, 0.5; // This is the second goal position, can be set as a parameter
-    // goal3 << 0.40, 0.49, 0.5; // This is the third goal position, can be set as a parameter
-    //?------------------------------------------------------------------------------------
-
-    //? Pick and place experiment ---------------------------------------------------------
-    // goal1 << -0.451, 0.54, 0.266;
-    // goal2 << 0.437, 0.633, 0.272;
-    // goal3 << 0.537, 0.341, 0.275;
-    // obstacle << -0.035, 0.459, 0.122; // This is the obstacle position, can be set as a parameter
-    //? ------------------------------------------------------------------------------------
-
-    //? Kitting Experiment -----------------------------------------------------------------
-    // Eigen::VectorXd goal4(3);
-    // Eigen::VectorXd goal5(3);
-    // Eigen::VectorXd goal6(3);
-    // goal1 << -0.249, 0.62, 0.214;
-    // goal2 << 0.01, 0.62, 0.214;
-    // goal3 << 0.242, 0.62, 0.214;
-    // goal4 << 0.242, 0.30, 0.274;
-    // goal5 << 0.01, 0.30, 0.274;
-    // goal6 << -0.249, 0.30, 0.274;
-
-    // Sequential goals
-
-    goal1 = this->goal_position_;
-
-    //?-------------------------------------------------------------------------------------
-
-    obstacle_vec = {obstacle};
-    goal_vec = {goal1};
-
-    double obstacle_radius = 0.2; // Radius of the obstacle, can be set as a parameter
-    double obstacle_radius2 = 0.2; // Radius of the second obstacle, can be set as a parameter
-    obstacle_radius_vec = {obstacle_radius};
+    goal_vec = {this->goal_position_};
 
     if (!this->button_pressed_)
     {
@@ -754,7 +688,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         // Compute the reference for the ACS based on the goal position
         Eigen::MatrixXd K = Eigen::MatrixXd::Identity(3, 3) * gamma;
         Eigen::MatrixXd K_obstacle = Eigen::MatrixXd::Identity(3, 3) * 0.01; // Repulsive force gain
-        Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(obstacle_vec, obstacle_radius_vec);
+        Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(this->obstacle_vec_, this->obstacle_radius_vec_);
         // Select most likely goal
         goal = this->SelectGoal(goal_vec, uh, scaling);
         Eigen::VectorXd goal_diff = goal - this->position_;

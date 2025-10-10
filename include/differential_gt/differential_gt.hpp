@@ -13,6 +13,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"                 // For Twist messages
 #include "std_msgs/msg/float64_multi_array.hpp"                // For Float64MultiArray messages
+#include "std_msgs/msg/float32_multi_array.hpp"                // For Float32MultiArray messages
 #include "std_msgs/msg/int32.hpp"                              // For Int32 messages
 #include "sensor_msgs/msg/joy.hpp"                             // For joystick input
 #include <tf2_ros/transform_listener.h>                        // TF2 Transform listener
@@ -21,7 +22,6 @@
 #include <tf2/LinearMath/Transform.h>                          // TF2 Transform math
 
 #define GRIPPER_OFFSET 0.1629 // Offset from the end effector to the tool tip in meters
-#define NUM_TARGETS 1
 
 class DifferentialGT : public rclcpp::Node
 {
@@ -38,7 +38,8 @@ private:
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
     void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);  // Takes a twist from a Safety Filter and stores it for later use (Marco you don't care about this)
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
-    void TargetCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);                // Takes the target position and stores it for later use
+    void TargetCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);                 // Takes the target position and stores it for later use
+    void ObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);              // Takes the obstacles positions and radii and stores them for later use
 
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
@@ -54,10 +55,10 @@ private:
 
 
     // Publishers
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_; // Publisher for the ACS wrench action
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;  // Publisher fot the HO wrench action (force from joystick)
-    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_wrench_pub_; // Publisher for the feedback wrench (force feedback to joystick)
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr selected_goal_pub_;                // Publisher for the selected goal index
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_acs_pub_;               // Publisher for the ACS wrench action
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_from_ho_pub_;                // Publisher fot the HO wrench action (force from joystick)
+    rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr feedback_wrench_pub_;               // Publisher for the feedback wrench (force feedback to joystick)
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr selected_goal_pub_;                              // Publisher for the selected goal index
     
 
     // Subscribers
@@ -66,20 +67,21 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;                       // Subscribes to the robot end effector twist
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;    // Subscribes to twist from safety filter (Marco you can delete this or discard it)
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_sub_;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr target_sub_;                      // Subscribes to the topic where the target positions are published
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr obstacles_sub_;                   // Subscribes to the topic where the obstacles positions are published    
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
     Eigen::VectorXd position_;                                                                          // End Effector (EE) Position [m]
     Eigen::Matrix3d orientation_;                                                                       // End Effector (EE) Orientation (Rotation Matrix)
-    Eigen::VectorXd linear_velocity_ = Eigen::VectorXd::Zero(3);                                         // Initialize EE linear velocity to zero [m/s]
+    Eigen::VectorXd linear_velocity_ = Eigen::VectorXd::Zero(3);                                        // Initialize EE linear velocity to zero [m/s]
     Eigen::Vector3d twist_from_safety_filter_ = Eigen::Vector3d::Zero();                                // Initialize twist from safety filter to zero [m/s] (Marco can discard)
 
     // Messages to publish
-    geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_; // ACS wrench to be applied to robot EE [N] and [Nm]                                             
-    geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_; // HO wrench to be aplied to robot EE [N] and [Nm]
-    geometry_msgs::msg::WrenchStamped feedback_wrench_msg_; // Feedback wrench to be applied to joystick [N] and [Nm]
-    std_msgs::msg::Int32                selected_goal_msg_; // Selected goal index
+    geometry_msgs::msg::WrenchStamped wrench_from_acs_msg_;                                             // ACS wrench to be applied to robot EE [N] and [Nm]                                             
+    geometry_msgs::msg::WrenchStamped wrench_ho_topub_msg_;                                             // HO wrench to be aplied to robot EE [N] and [Nm]
+    geometry_msgs::msg::WrenchStamped feedback_wrench_msg_;                                             // Feedback wrench to be applied to joystick [N] and [Nm]
+    std_msgs::msg::Int32                selected_goal_msg_;                                             // Selected goal index
     
 
     // Game Theory Objects
@@ -134,8 +136,12 @@ private:
     Eigen::MatrixXd K_ncgt_a_;
     Eigen::MatrixXd K_ncgt_h_;
 
-    // Vector containing the goal (sequence, kitting experiment)
+    // Goal
     Eigen::VectorXd goal_position_ = Eigen::VectorXd::Zero(3); // Goal position [m]
+
+    // Vector Containing the Obstacles Positions and Obstacles radii
+    std::vector<Eigen::VectorXd> obstacle_vec_;
+    std::vector<double> obstacle_radius_vec_;
 
 
     // Parameters
@@ -202,6 +208,7 @@ private:
     std_msgs::msg::Float64MultiArray tank_level_msg_;
     //?------------------------------------------------------------------------------------
 
+    static constexpr int NUM_TARGETS = 1;
 
 };
 #endif // DIFFERENTIAL_GT_HPP
