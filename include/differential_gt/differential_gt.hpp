@@ -2,6 +2,8 @@
 #define DIFFERENTIAL_GT_HPP
 
 #include "rclcpp/rclcpp.hpp"
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem>
 #include "../include/differential_gt/cgt.hpp"
 #include "../include/differential_gt/ncgt.hpp"
 #include "../include/differential_gt/arbitration.hpp"
@@ -22,6 +24,8 @@
 #include <tf2/LinearMath/Transform.h>                          // TF2 Transform math
 
 #define GRIPPER_OFFSET 0.1629 // Offset from the end effector to the tool tip in meters
+
+namespace fs = std::filesystem;
 
 class DifferentialGT : public rclcpp::Node
 {

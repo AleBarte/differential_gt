@@ -102,9 +102,11 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         // Save matrices in a file
         std::vector<Eigen::MatrixXd> matrices = {this->Qhh_, this->Qhr_, this->Qrh_, this->Qrr_,
                                             this->Rh_, this->Rr_, this->Qh_, this->Qr_, this->Rhh_, this->Rhr_, this->Rrh_, this->Rrr_};
-
-        std::string save_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->save_matrices_ + ".txt"; //TODO: Change Path here on your machine
-        Utils::saveMultipleMatrices(save_path, matrices);
+        
+        std::string package_share_dir = ament_index_cpp::get_package_share_directory("differential_gt");
+        fs::path save_dir = fs::path(package_share_dir) / "saved_configs";
+        fs::path save_path = save_dir / (this->save_matrices_ + ".txt"); 
+        Utils::saveMultipleMatrices(save_path.string(), matrices);
     }
 
 
@@ -548,9 +550,11 @@ void DifferentialGT::SetCostMatrices()
         //!--------------------------------------------------------------------------------
     } else {
         // Load matrices from a file
-        std::string load_path = "/home/alebarte/ur5e_ws/src/differential_gt/saved_configs/" + this->load_matrices_ + ".txt"; //TODO: Change path here on your machine
+        std::string package_share_dir = ament_index_cpp::get_package_share_directory("differential_gt");
+        fs::path load_dir = fs::path(package_share_dir) / "saved_configs";
+        fs::path load_path = load_dir / (this->load_matrices_ + ".txt"); 
         std::vector<Eigen::MatrixXd> matrices;
-        matrices = Utils::loadMultipleMatrices(load_path);
+        matrices = Utils::loadMultipleMatrices(load_path.string());
         
         this->Qhh_ = matrices[0];
         this->Qhr_ = matrices[1];
