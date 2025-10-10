@@ -74,7 +74,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->SetCostMatrices();
 
     //Feedback scaling factor
-    this->feedback_scaling_factor_ = 0.8;     // Factor to scale the feedback force sent to the master device
+    this->feedback_scaling_factor_ = 0.5;     // Factor to scale the feedback force sent to the master device
     this->assistance_factor_ = 5.0;         // Factor to increase assistance in non-cooperative GT
 
     //* Complete game theory initialization
@@ -286,6 +286,8 @@ void DifferentialGT::OverrideCallback(const std_msgs::msg::Int32::SharedPtr msg)
     }
 }
 
+//! IDEA: when in coop mode, generate feedback force towards text "point" in the smoothed path (to be implemented and tested)
+
 //----------------------------------------------------
 // ComputeFeedbackForce
 void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, const Eigen::VectorXd &acs_action)
@@ -308,7 +310,7 @@ void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, cons
 
     // Apply a low-pass filter to smooth the feedback force
     static Eigen::Vector3d filtered_feedback_force = Eigen::Vector3d::Zero(); 
-    double smoothing_factor = 0.01; // Adjust for more or less smoothing
+    double smoothing_factor = 0.2; // Adjust for more or less smoothing
     filtered_feedback_force = smoothing_factor * feedback_force + (1.0 - smoothing_factor) * filtered_feedback_force;
 
     // Populate the feedback force message
@@ -428,68 +430,128 @@ void DifferentialGT::ComputeACSAction()
     {
         // ARBITRATION ------------------------------------------
 
-        this->arbitration_.CosineSimilarityHysteresis(
-            uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
-            this->switch_on_point_, this->switch_off_point_
-        );
-
+        if (this->algorithm_ == "dorigo") 
+        {
+            this->arbitration_.CosineSimilarityHysteresis(
+                uh_real, u_ncgt_a, this->cos_theta_, this->decision_,
+                this->switch_on_point_, this->switch_off_point_
+            );
+        
+        
         // Add a blending factor for smooth transitions between modes
-        double blending_factor_ = 0.0; // Starts at 0 (NC) and transitions to 1 (C)
-        double blending_rate_ = 0.1;   // Rate of blending
+            double blending_factor_ = 0.0; // Starts at 0 (NC) and transitions to 1 (C)
+            double blending_rate_ = 0.1;   // Rate of blending
 
-        if (this->decision_ == 0) // Cooperative mode
-        {
-            // Gradually increase the blending factor
-            blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
-
-            // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
-
-            ho_action = u_cgt_h;
-
-            if (this->override_ho_wrench_)
+            if (this->decision_ == 0) // Cooperative mode
             {
-                acs_action += u_cgt_h;
+                // Gradually increase the blending factor
+                blending_factor_ = std::min(1.0, blending_factor_ + blending_rate_);
+
+                // Blend the ACS force between NC and C
+                acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+
+                ho_action = u_cgt_h;
+
+                if (this->override_ho_wrench_)
+                {
+                    acs_action += u_cgt_h;
+                }
+
+                // Compute and publish feedback force
+                //! Using the real force now for feedback (before I was using the HO action computed from CGT with feedback matrix)
+                this->ComputeFeedbackForce(uh_real, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+            }
+            else // Non-cooperative mode
+            {
+                // Gradually decrease the blending factor
+                blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
+
+                // Blend the ACS force between NC and C
+                acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
+
+                ho_action = u_ncgt_h;
+
+                if (this->override_ho_wrench_)
+                {
+                    acs_action += u_ncgt_h;
+                }
             }
 
-            // Compute and publish feedback force
-            this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+            // Create the WrenchStamped message to publish
+            this->wrench_from_acs_msg_.header.stamp = this->now();
+            this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
+            this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
+            this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
+            this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
+            this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
+            this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
+            this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
+
+            this->wrench_ho_topub_msg_.header.stamp = this->now();
+            this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
+            this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
+            this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
+            this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
+            this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
+            this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
+            this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+
         }
-        else // Non-cooperative mode
+        else if (this->algorithm_ == "pedrocchi")
         {
-            // Gradually decrease the blending factor
-            blending_factor_ = std::max(0.0, blending_factor_ - blending_rate_);
-
-            // Blend the ACS force between NC and C
-            acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
-
-            ho_action = u_ncgt_h;
-
-            if (this->override_ho_wrench_)
-            {
-                acs_action += u_ncgt_h;
+            if (this->alpha_ >= 0.5) {
+                this->decision_ = 0; // Cooperative (as in p.8 of Pedrocchi 2024)
+            } else {
+                this->decision_ = 1; // Non-cooperative
             }
+
+            if (this->decision_ == 0) // Cooperative mode
+            {
+                acs_action = u_cgt_a;
+                ho_action = u_cgt_h;
+
+                if (this->override_ho_wrench_)
+                {
+                    acs_action += u_cgt_h;
+                }
+
+                // Compute and publish feedback force
+                //this->ComputeFeedbackForce(ho_action, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+            }
+            else // Non-cooperative mode
+            {
+                acs_action = u_ncgt_a;
+                ho_action = u_ncgt_h;
+
+                if (this->override_ho_wrench_)
+                {
+                    acs_action += u_ncgt_h;
+                }
+            }
+
+            // Create the WrenchStamped message to publish
+            this->wrench_from_acs_msg_.header.stamp = this->now();
+            this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
+            this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
+            this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
+            this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
+            this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
+            this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
+            this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
+
+            this->wrench_ho_topub_msg_.header.stamp = this->now();
+            this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
+            this->wrench_ho_topub_msg_.wrench.force.x = ho_action[0];
+            this->wrench_ho_topub_msg_.wrench.force.y = ho_action[1];
+            this->wrench_ho_topub_msg_.wrench.force.z = ho_action[2];
+            this->wrench_ho_topub_msg_.wrench.torque.x = 0.0;
+            this->wrench_ho_topub_msg_.wrench.torque.y = 0.0;
+            this->wrench_ho_topub_msg_.wrench.torque.z = 0.0;
+
         }
     }
 
-    // Create the WrenchStamped message to publish
-    this->wrench_from_acs_msg_.header.stamp = this->now();
-    this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
-    this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
-    this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
-    this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
-    this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
-    this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
-    this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
-
-    this->wrench_ho_topub_msg_.header.stamp = this->now();
-    this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
-    this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
-    this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
-    this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
-    this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
-    this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
-    this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+    
 }
 
 //----------------------------------------------------
