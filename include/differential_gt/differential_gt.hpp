@@ -21,6 +21,7 @@
 #include <tf2/LinearMath/Transform.h>                          // TF2 Transform math
 
 #define GRIPPER_OFFSET 0.1629 // Offset from the end effector to the tool tip in meters
+#define NUM_TARGETS 1
 
 class DifferentialGT : public rclcpp::Node
 {
@@ -37,7 +38,8 @@ private:
     void TwistCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);
     void TwistFromSafetyFilterCallback(const geometry_msgs::msg::TwistStamped::SharedPtr msg);  // Takes a twist from a Safety Filter and stores it for later use (Marco you don't care about this)
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
-    
+    void TargetCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);                // Takes the target position and stores it for later use
+
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
     void SetCostMatrices();     // Sets the various cost matrices for CGT and NCGT
@@ -64,6 +66,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_sub_;                       // Subscribes to the robot end effector twist
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_from_safety_filter_sub_;    // Subscribes to twist from safety filter (Marco you can delete this or discard it)
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_sub_;
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -131,6 +134,9 @@ private:
     Eigen::MatrixXd K_ncgt_a_;
     Eigen::MatrixXd K_ncgt_h_;
 
+    // Vector containing the goal (sequence, kitting experiment)
+    Eigen::VectorXd goal_position_ = Eigen::VectorXd::Zero(3); // Goal position [m]
+
 
     // Parameters
     std::string ho_wrench_topic_;           // Topic from which the HO wrench is read
@@ -171,7 +177,7 @@ private:
 
     Eigen::VectorXd acs_ref_; // Reference trajectory for the ACS
     Eigen::VectorXd ho_ref_; // Reference trajectory for the HO 
-    Eigen::VectorXd filtered_posterior_ = Eigen::VectorXd::Zero(3); // Filtered posterior for the MoE //! Targets must be known a priori
+    Eigen::VectorXd filtered_posterior_ = Eigen::VectorXd::Zero(NUM_TARGETS); // Filtered posterior for the MoE //! Targets must be known a priori
     Eigen::VectorXd filtered_acs_wrench_ = Eigen::VectorXd::Zero(3); // Filtered ACS wrench
 
     //? Debugging ------------------------------------------------------------------------

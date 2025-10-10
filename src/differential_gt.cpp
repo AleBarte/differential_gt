@@ -63,6 +63,10 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
 
     this->buttons_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
+
+    this->target_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/goal_position", 10, std::bind(&DifferentialGT::TargetCallback, this, std::placeholders::_1)
+    );
      
 
     // Arbitration
@@ -155,6 +159,7 @@ bool DifferentialGT::Startup()
         this->acs_ref_ = this->initial_position_;
         this->ho_ref_.resize(3);
         this->ho_ref_ = this->initial_position_;
+        this->goal_position_ = this->initial_position_; // Initialize goal position to initial position
 
         // Set initial orientation
         Eigen::Quaterniond q(
@@ -242,6 +247,20 @@ void DifferentialGT::TwistFromSafetyFilterCallback(const geometry_msgs::msg::Twi
     this->twist_from_safety_filter_[0] = msg->twist.linear.x;
     this->twist_from_safety_filter_[1] = msg->twist.linear.y;
     this->twist_from_safety_filter_[2] = msg->twist.linear.z;
+}
+
+//----------------------------------------------------
+// TargetCallback
+void DifferentialGT::TargetCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+    {
+        return;
+    }
+
+    this->goal_position_[0] = msg->pose.position.x;
+    this->goal_position_[1] = msg->pose.position.y;
+    this->goal_position_[2] = msg->pose.position.z;
 }
 
 void DifferentialGT::ComputeACSAction()
@@ -669,22 +688,35 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
     //?------------------------------------------------------------------------------------
 
     //? Pick and place experiment ---------------------------------------------------------
-    goal1 << -0.451, 0.54, 0.266;
-    goal2 << 0.437, 0.633, 0.272;
-    goal3 << 0.537, 0.341, 0.275;
-    obstacle << -0.035, 0.459, 0.122; // This is the obstacle position, can be set as a parameter
+    // goal1 << -0.451, 0.54, 0.266;
+    // goal2 << 0.437, 0.633, 0.272;
+    // goal3 << 0.537, 0.341, 0.275;
+    // obstacle << -0.035, 0.459, 0.122; // This is the obstacle position, can be set as a parameter
     //? ------------------------------------------------------------------------------------
 
-    // obstacle_vec = {obstacle}; // Vector of obstacles, can be extended with more obstacles
+    //? Kitting Experiment -----------------------------------------------------------------
+    // Eigen::VectorXd goal4(3);
+    // Eigen::VectorXd goal5(3);
+    // Eigen::VectorXd goal6(3);
+    // goal1 << -0.249, 0.62, 0.214;
+    // goal2 << 0.01, 0.62, 0.214;
+    // goal3 << 0.242, 0.62, 0.214;
+    // goal4 << 0.242, 0.30, 0.274;
+    // goal5 << 0.01, 0.30, 0.274;
+    // goal6 << -0.249, 0.30, 0.274;
+
+    // Sequential goals
+
+    goal1 = this->goal_position_;
+
+    //?-------------------------------------------------------------------------------------
+
     obstacle_vec = {obstacle};
-    goal_vec = {goal1, goal2, goal3};
+    goal_vec = {goal1};
 
     double obstacle_radius = 0.2; // Radius of the obstacle, can be set as a parameter
     double obstacle_radius2 = 0.2; // Radius of the second obstacle, can be set as a parameter
     obstacle_radius_vec = {obstacle_radius};
-    //! This line needs to stay commented out-----------------------------------------------------------------------
-    // this->button_pressed_ = true;
-    //!-------------------------------------------------------------------------------------------------------------
 
     if (!this->button_pressed_)
     {
@@ -831,7 +863,11 @@ Eigen::VectorXd DifferentialGT::SelectGoal(const std::vector<Eigen::VectorXd> &g
     Eigen::VectorXd delta_p(3);
     double ent;
     Eigen::VectorXd posterior = compute_moe_posterior(this->position_, uh, goals, ent);
-    ent = ent / std::log(goals.size());
+    if (this->NUM_TARGETS == 1) {
+        ent = 0.0;
+    } else {
+        ent = ent / std::log(goals.size());
+    }
     std::cout << "Entropy: " << ent << std::endl;
     delta_p = posterior - this->filtered_posterior_;
     this->filtered_posterior_ = 0.99 * this->filtered_posterior_ + 0.01 * posterior; // Apply a low-pass filter to the posterior;
