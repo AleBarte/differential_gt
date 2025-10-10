@@ -9,6 +9,13 @@ def generate_launch_description():
     publishing_rate = 500.0
 
     return LaunchDescription([
+        # Declare launch argument for algorithm
+        DeclareLaunchArgument(
+            'algorithm',
+            default_value='dorigo',
+            description='Algorithm type for differential GT (options: manual, dorigo, pedrocchi)'
+        ),
+
         Node(
             package = "compliance_controller",
             executable = "virtual_wrench_commander",
@@ -19,6 +26,17 @@ def generate_launch_description():
                 {"exclude_acs": False},
                 {"use_safety_filter": False},
                 {"wrench_from_joystick_topic": "/differential_gt/wrench_from_ho"}
+            ]
+        ),
+
+        Node(
+            package = "differential_gt",
+            executable = "differential_gt",
+            name = "differential_gt",
+            output = "screen",
+            parameters = [
+                {"publishing_rate": publishing_rate},
+                {"algorithm": LaunchConfiguration('algorithm')}
             ]
         )
     ])

@@ -29,6 +29,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("publishing_rate", 500.0);
     this->declare_parameter<bool>("override_ho_wrench", false);
     this->declare_parameter<double>("feedback_scaling_factor", 0.5); 
+    this->declare_parameter<std::string>("algorithm", "dorigo"); // Options: "dorigo", "manual", "pedrocchi"
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
@@ -48,6 +49,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->publishing_rate_ = this->get_parameter("publishing_rate").as_double();
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
     this->feedback_scaling_factor_ = this->get_parameter("feedback_scaling_factor").as_double();
+    this->algorithm_ = this->get_parameter("algorithm").as_string();
 
     // Initialize publishers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
@@ -417,8 +419,8 @@ void DifferentialGT::ComputeACSAction()
     Eigen::VectorXd ho_action(3); // Action from the HO
     Eigen::VectorXd feedback_force(3); // Feedback force to be sent to the master device
 
-    // Check the manual override value
-    if (this->override_value_ == 1) 
+    // Check the manual override value (only for wii)
+    if (this->override_value_ == 1 || this->algorithm_ == "manual") 
     {
         acs_action.setZero(); // Set acs_action to 0 and skip the following block
     } 

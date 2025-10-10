@@ -137,6 +137,7 @@ private:
     double switch_off_point_;                    // Switch off point for Cosine Similarity Hysteresis
     double publishing_rate_;                     // Default publishing rate in seconds
     bool override_ho_wrench_;                    // Flag to override the HO wrench with ACS action
+    std::string algorithm_;                      // Algorithm type (e.g., "cgt" or "ncgt")
 
     // TF2
     tf2_ros::Buffer tf_buffer_;
