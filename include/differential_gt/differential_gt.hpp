@@ -44,6 +44,7 @@ private:
     void ButtonsCallback(const sensor_msgs::msg::Joy::SharedPtr msg);                           // Takes the values of the buttons on the joystick and stores them for later use
     void TargetCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);                 // Takes the target position and stores it for later use
     void ObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);              // Takes the obstacles positions and radii and stores them for later use
+    void CylindricalObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);  // Takes the cylindrical obstacles data and stores it for later use
 
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
@@ -56,6 +57,10 @@ private:
     Eigen::VectorXd ComputeRepulsiveForce(const Eigen::VectorXd &obsatcle, const double &radius);
     Eigen::VectorXd ComputeRepulsiveForce(const std::vector<Eigen::VectorXd> &obstacles, const std::vector<double> &radii);
     Eigen::VectorXd SelectGoal(const std::vector<Eigen::VectorXd> &goals, const Eigen::VectorXd &uh, double &scaling);
+    Eigen::VectorXd ComputeRepulsiveForce(const Eigen::VectorXd &cylinder_center, const double &radius, const double &height);
+    Eigen::VectorXd ComputeCylindricalRepulsiveForce(const std::vector<Eigen::VectorXd> &cylinder_centers, 
+                                                 const std::vector<double> &radii, 
+                                                 const std::vector<double> &heights);
 
 
     // Publishers
@@ -73,6 +78,7 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr buttons_sub_;                                // Subcribes to the buttons of the joystick
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr target_sub_;                      // Subscribes to the topic where the target positions are published
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr obstacles_sub_;                   // Subscribes to the topic where the obstacles positions are published    
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr cylindrical_obstacles_sub_;      // Subscribes to the topic where the cylindrical obstacles data is published
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -146,6 +152,9 @@ private:
     // Vector Containing the Obstacles Positions and Obstacles radii
     std::vector<Eigen::VectorXd> obstacle_vec_;
     std::vector<double> obstacle_radius_vec_;
+    std::vector<Eigen::VectorXd> cylindrical_obstacle_centers_;
+    std::vector<double> cylindrical_obstacle_radii_;
+    std::vector<double> cylindrical_obstacle_heights_;
 
 
     // Parameters

@@ -65,13 +65,16 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         "/falcon0/buttons", 10, std::bind(&DifferentialGT::ButtonsCallback, this, std::placeholders::_1));
 
     this->target_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-        "/", 10, std::bind(&DifferentialGT::TargetCallback, this, std::placeholders::_1) //TODO: Change with your topic name for target
+        "/target_position", 10, std::bind(&DifferentialGT::TargetCallback, this, std::placeholders::_1) 
     );
 
     this->obstacles_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
-        "/", 10, std::bind(&DifferentialGT::ObstaclesCallback, this, std::placeholders::_1) //TODO: Change with your topic name
+        "/spherical_obstacles", 10, std::bind(&DifferentialGT::ObstaclesCallback, this, std::placeholders::_1) 
     );
      
+    this->cylindrical_obstacles_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+        "/cylindrical_obstacles", 10, std::bind(&DifferentialGT::CylindricalObstaclesCallback, this, std::placeholders::_1)
+    );
 
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
@@ -264,18 +267,72 @@ void DifferentialGT::TargetCallback(const std_msgs::msg::Float32MultiArray::Shar
         return;
     }
 
-    // TODO: Define your logic for storing goal information. For the code to work, only goal position is necessary.
-    // Use the variable this->goal_position_ (Eigen::VectorXd) to store the goal position.
+    // The target message contains simply the three coordinates [x, y, z]
+    if (msg->data.size() >= 3)
+    {
+        this->goal_position_.resize(3);
+        this->goal_position_[0] = msg->data[0];
+        this->goal_position_[1] = msg->data[1];
+        this->goal_position_[2] = msg->data[2];
+    }
 }
 
 void DifferentialGT::ObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
 {
     if (!this->is_initialized_)
         return;
-    // TODO: Define your logic for storing obstacles info. For the code to work obstacles positions and radii are needed.
-    // Use variable this->obstacle_vec_ (vector<Eigen::VectorXd>) to store the obstacles positions
-    // Use variable this->obstacle_radius_vec_ (vector<double>) to store obstacles radii
+    
+    // Clear existing obstacles
+    this->obstacle_vec_.clear();
+    this->obstacle_radius_vec_.clear();
+    
+    // Parse the data: for each obstacle we have [x, y, z, radius]
+    const auto& data = msg->data;
+    for (size_t i = 0; i < data.size(); i += 4) {
+        if (i + 3 < data.size()) {
+            // Extract center coordinates
+            Eigen::VectorXd center(3);
+            center << data[i], data[i+1], data[i+2];
+            
+            // Extract radius
+            double radius = data[i+3];
+            
+            // Only add obstacles with non-zero radius
+            if (radius > 0.0) {
+                this->obstacle_vec_.push_back(center);
+                this->obstacle_radius_vec_.push_back(radius);
+            }
+        }
+    }
+}
 
+void DifferentialGT::CylindricalObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+        return;
+    
+    // Clear existing cylindrical obstacles
+    this->cylindrical_obstacle_centers_.clear();
+    this->cylindrical_obstacle_radii_.clear();
+    this->cylindrical_obstacle_heights_.clear();
+    
+    // Parse the data: for each obstacle we have [x, y, z, radius, height]
+    const auto& data = msg->data;
+    for (size_t i = 0; i < data.size(); i += 5) {
+        if (i + 4 < data.size()) {
+            Eigen::VectorXd center(3);
+            center << data[i], data[i+1], data[i+2];
+            double radius = data[i+3];
+            double height = data[i+4];
+            
+            // Only add obstacles with non-zero radius
+            if (radius > 0.0) {
+                this->cylindrical_obstacle_centers_.push_back(center);
+                this->cylindrical_obstacle_radii_.push_back(radius);
+                this->cylindrical_obstacle_heights_.push_back(height);
+            }
+        }
+    }
 }
 
 void DifferentialGT::ComputeACSAction()
@@ -693,6 +750,8 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
         Eigen::MatrixXd K = Eigen::MatrixXd::Identity(3, 3) * gamma;
         Eigen::MatrixXd K_obstacle = Eigen::MatrixXd::Identity(3, 3) * 0.01; // Repulsive force gain
         Eigen::VectorXd repulsive_force = this->ComputeRepulsiveForce(this->obstacle_vec_, this->obstacle_radius_vec_);
+        Eigen::VectorXd cylindrical_repulsive_force = this->ComputeCylindricalRepulsiveForce(this->cylindrical_obstacle_centers_, this->cylindrical_obstacle_radii_, this->cylindrical_obstacle_heights_);
+        repulsive_force += cylindrical_repulsive_force; // Combine both repulsive forces
         // Select most likely goal
         goal = this->SelectGoal(goal_vec, uh, scaling);
         Eigen::VectorXd goal_diff = goal - this->position_;
@@ -769,6 +828,45 @@ Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const Eigen::VectorXd &obs
     return force;
 }
 
+Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const Eigen::VectorXd &cylinder_center, const double &radius, const double &height)
+{
+    Eigen::VectorXd force(3);
+    Eigen::VectorXd tool_tip(3);
+    force.setZero();
+
+    double eta = 1.0;
+
+    tool_tip = this->position_ + this->orientation_.col(2) * GRIPPER_OFFSET;
+
+    // Check if the tool tip is within the cylinder's height range
+    double tool_z = tool_tip[2];
+    double cylinder_base_z = cylinder_center[2];
+    double cylinder_top_z = cylinder_base_z + height;
+
+    if (tool_z < cylinder_base_z || tool_z > cylinder_top_z) {
+        // Tool tip is outside the cylinder's height range, no repulsive force
+        return force;
+    }
+
+    // Compute the distance to the cylinder axis (only considering x and y coordinates)
+    Eigen::VectorXd tool_xy = tool_tip.head(2);
+    Eigen::VectorXd cylinder_xy = cylinder_center.head(2);
+    Eigen::VectorXd diff_xy = tool_xy - cylinder_xy;
+    double distance_xy = diff_xy.norm();
+
+    // If within the radius, compute the repulsive force
+    if (distance_xy < radius && distance_xy > 1e-6) {
+        double force_magnitude = eta * (1.0 / distance_xy - 1.0 / radius) / std::pow(distance_xy, 2);
+        Eigen::VectorXd force_direction_xy = diff_xy / distance_xy;
+        
+        // Apply force only in x-y plane
+        force.head(2) = force_magnitude * force_direction_xy;
+        force[2] = 0.0; // No force in z direction
+    }
+
+    return force;
+}
+
 Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const std::vector<Eigen::VectorXd> &obstacles, const std::vector<double> &radii)
 {
     Eigen::VectorXd total_force(3);
@@ -784,9 +882,29 @@ Eigen::VectorXd DifferentialGT::ComputeRepulsiveForce(const std::vector<Eigen::V
     if (total_force.norm() > 0.0)
     {
         this->potential_active_ = true; // Set the potential active flag if any force is computed
-    } else {
-        this->potential_active_ = false; // Reset the potential active flag if no force is computed
     }
+    
+    total_force = total_force - D * this->linear_velocity_; // Damping effect on the repulsive force
+    return total_force;
+}
+
+Eigen::VectorXd DifferentialGT::ComputeCylindricalRepulsiveForce(const std::vector<Eigen::VectorXd> &cylinder_centers, const std::vector<double> &radii, const std::vector<double> &heights)
+{
+    Eigen::VectorXd total_force(3);
+    Eigen::MatrixXd D = 5.0 * Eigen::MatrixXd::Identity(3,3);
+    total_force.setZero();
+
+    for (size_t i = 0; i < cylinder_centers.size(); ++i)
+    {
+        Eigen::VectorXd force = this->ComputeRepulsiveForce(cylinder_centers[i], radii[i], heights[i]);
+        total_force += force;
+    }
+
+    if (total_force.norm() > 0.0)
+    {
+        this->potential_active_ = true; // Set the potential active flag if any force is computed
+    }
+    
     total_force = total_force - D * this->linear_velocity_; // Damping effect on the repulsive force
     return total_force;
 }
