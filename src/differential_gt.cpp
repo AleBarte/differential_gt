@@ -76,6 +76,10 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
         "/cylindrical_obstacles", 10, std::bind(&DifferentialGT::CylindricalObstaclesCallback, this, std::placeholders::_1)
     );
 
+    this->cylinder_base_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+        "/cylinder_base", 10, std::bind(&DifferentialGT::CylinderBaseCallback, this, std::placeholders::_1)
+    );
+
     // Arbitration
     this->arbitration_ = Arbitration(0.5);
 
@@ -331,6 +335,34 @@ void DifferentialGT::CylindricalObstaclesCallback(const std_msgs::msg::Float32Mu
                 this->cylindrical_obstacle_radii_.push_back(radius);
                 this->cylindrical_obstacle_heights_.push_back(height);
             }
+        }
+    }
+}
+
+void DifferentialGT::CylinderBaseCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+{
+    if (!this->is_initialized_)
+        return;
+    
+    // Parse the data: [x, y, z, radius, height]
+    const auto& data = msg->data;
+    if (data.size() >= 5) {
+        // Extract center coordinates
+        Eigen::VectorXd center(3);
+        center << data[0], data[1], data[2];
+        
+        // Extract radius and height
+        double radius = data[3];
+        double height = data[4];
+        
+        // Store the cylinder base obstacle
+        if (radius > 0.0) {
+            this->cylinder_base_center_ = center;
+            this->cylinder_base_radius_ = radius;
+            this->cylinder_base_height_ = height;
+            this->has_cylinder_base_ = true;
+        } else {
+            this->has_cylinder_base_ = false;
         }
     }
 }
@@ -737,7 +769,7 @@ void DifferentialGT::ComputeReferences(Eigen::VectorXd &ref_h, Eigen::VectorXd &
 
         // Compute the reference for the HO based on the admittance model
         double dt = 1.0 / this->publishing_rate_;
-        double gamma = 1.0; //! Previously here was 0.8
+        double gamma = 0.25; //! Previously here was 0.8
         double scaling;
         Eigen::Vector3d uh(
             this->wrench_from_ho_msg_.wrench.force.x,
@@ -897,6 +929,12 @@ Eigen::VectorXd DifferentialGT::ComputeCylindricalRepulsiveForce(const std::vect
     for (size_t i = 0; i < cylinder_centers.size(); ++i)
     {
         Eigen::VectorXd force = this->ComputeRepulsiveForce(cylinder_centers[i], radii[i], heights[i]);
+        total_force += force;
+    }
+
+    // Add cylinder base obstacle if available
+    if (this->has_cylinder_base_) {
+        Eigen::VectorXd force = this->ComputeRepulsiveForce(this->cylinder_base_center_, this->cylinder_base_radius_, this->cylinder_base_height_);
         total_force += force;
     }
 

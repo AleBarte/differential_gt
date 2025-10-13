@@ -45,6 +45,7 @@ private:
     void TargetCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);                 // Takes the target position and stores it for later use
     void ObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);              // Takes the obstacles positions and radii and stores them for later use
     void CylindricalObstaclesCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);  // Takes the cylindrical obstacles data and stores it for later use
+    void CylinderBaseCallback(const std_msgs::msg::Float32MultiArray::SharedPtr msg);          // Takes the cylinder base obstacle data and stores it for later use
 
     // Functions
     void SetSystemMatrices();   // Sets matrices for the Mass-Spring-Damper (MSD) system. Needed to compute the CGT and NCGT gains
@@ -79,6 +80,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr target_sub_;                      // Subscribes to the topic where the target positions are published
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr obstacles_sub_;                   // Subscribes to the topic where the obstacles positions are published    
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr cylindrical_obstacles_sub_;      // Subscribes to the topic where the cylindrical obstacles data is published
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr cylinder_base_sub_;              // Subscribes to the topic where the cylinder base obstacle data is published
 
     // Messages to save data from subscribers
     geometry_msgs::msg::WrenchStamped wrench_from_ho_msg_;                                              // HO force in [N]
@@ -155,6 +157,12 @@ private:
     std::vector<Eigen::VectorXd> cylindrical_obstacle_centers_;
     std::vector<double> cylindrical_obstacle_radii_;
     std::vector<double> cylindrical_obstacle_heights_;
+
+    // Cylinder base obstacle
+    Eigen::VectorXd cylinder_base_center_;
+    double cylinder_base_radius_;
+    double cylinder_base_height_;
+    bool has_cylinder_base_ = false;
 
 
     // Parameters
