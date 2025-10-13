@@ -312,6 +312,7 @@ void DifferentialGT::ComputeFeedbackForce(const Eigen::VectorXd &ho_action, cons
     static Eigen::Vector3d filtered_feedback_force = Eigen::Vector3d::Zero(); 
     double smoothing_factor = 0.2; // Adjust for more or less smoothing
     filtered_feedback_force = smoothing_factor * feedback_force + (1.0 - smoothing_factor) * filtered_feedback_force;
+    
 
     // Populate the feedback force message
     this->feedback_force_msg_.header.stamp = this->now();
@@ -459,7 +460,7 @@ void DifferentialGT::ComputeACSAction()
 
                 // Compute and publish feedback force
                 //! Using the real force now for feedback (before I was using the HO action computed from CGT with feedback matrix)
-                this->ComputeFeedbackForce(uh_real, u_ncgt_a); // using u_ncgt_a as the ACS action for feedback
+                this->ComputeFeedbackForce(uh_real, u_cgt_h); // using u_ncgt_a as the ACS action for feedback
             }
             else // Non-cooperative mode
             {
