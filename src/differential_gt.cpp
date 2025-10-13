@@ -426,6 +426,26 @@ void DifferentialGT::ComputeACSAction()
     if (this->override_value_ == 1 || this->algorithm_ == "manual") 
     {
         acs_action.setZero(); // Set acs_action to 0 and skip the following block
+
+        // Create the WrenchStamped message to publish
+        this->wrench_from_acs_msg_.header.stamp = this->now();
+        this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
+        this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
+        this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
+        this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
+        this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
+        this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
+        this->wrench_from_acs_msg_.wrench.torque.z = 0.0;
+
+        this->wrench_ho_topub_msg_.header.stamp = this->now();
+        this->wrench_ho_topub_msg_.header.frame_id = this->base_frame_;
+        this->wrench_ho_topub_msg_.wrench.force.x = this->wrench_from_ho_msg_.wrench.force.x;
+        this->wrench_ho_topub_msg_.wrench.force.y = this->wrench_from_ho_msg_.wrench.force.y;
+        this->wrench_ho_topub_msg_.wrench.force.z = this->wrench_from_ho_msg_.wrench.force.z;
+        this->wrench_ho_topub_msg_.wrench.torque.x = this->wrench_from_ho_msg_.wrench.torque.x;
+        this->wrench_ho_topub_msg_.wrench.torque.y = this->wrench_from_ho_msg_.wrench.torque.y;
+        this->wrench_ho_topub_msg_.wrench.torque.z = this->wrench_from_ho_msg_.wrench.torque.z;
+
     } 
     else 
     {
@@ -552,7 +572,8 @@ void DifferentialGT::ComputeACSAction()
         }
     }
 
-    
+
+
 }
 
 //----------------------------------------------------
