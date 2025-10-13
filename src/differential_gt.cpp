@@ -473,6 +473,11 @@ void DifferentialGT::ComputeACSAction()
 
                 ho_action = u_cgt_h;
 
+                // Apply velocity-based damping
+                double velocity_magnitude = this->linear_velocity_.norm();
+                double velocity_damping_factor = 1.0 / (1.0 + velocity_magnitude); // Reduces action when moving fast
+                acs_action *= velocity_damping_factor;
+
                 if (this->override_ho_wrench_)
                 {
                     acs_action += u_cgt_h;
@@ -491,6 +496,11 @@ void DifferentialGT::ComputeACSAction()
                 acs_action = blending_factor_ * (1 - this->alpha_) * u_cgt_a + (1 - blending_factor_) * ((1 - this->alpha_) * u_ncgt_a);
 
                 ho_action = u_ncgt_h;
+
+                // Apply velocity-based damping
+                double velocity_magnitude = this->linear_velocity_.norm();
+                double velocity_damping_factor = 1.0 / (1.0 + velocity_magnitude); // Reduces action when moving fast
+                acs_action *= velocity_damping_factor;
 
                 if (this->override_ho_wrench_)
                 {
