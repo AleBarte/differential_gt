@@ -24,7 +24,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("publishing_rate", 500.0);
     this->declare_parameter<bool>("override_ho_wrench", false); 
     this->declare_parameter<std::string>("save_matrices", ""); 
-    this->declare_parameter<std::string>("load_matrices", "");
+    this->declare_parameter<std::string>("load_matrices", "pedrocchi");
     this->declare_parameter<bool>("mix", false);
 
     // Get parameters
