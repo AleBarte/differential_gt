@@ -29,7 +29,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<double>("publishing_rate", 500.0);
     this->declare_parameter<bool>("override_ho_wrench", false);
     this->declare_parameter<double>("feedback_scaling_factor", 0.5); 
-    this->declare_parameter<std::string>("algorithm", "dorigo"); // Options: "dorigo", "manual", "pedrocchi"
+    this->declare_parameter<std::string>("algorithm", "dorigo"); // Options: "dorigo", "manual"
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
