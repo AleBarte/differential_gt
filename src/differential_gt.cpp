@@ -485,7 +485,7 @@ void DifferentialGT::ComputeACSAction()
 
                 // Compute and publish feedback force
                 //! Using the real force now for feedback (before I was using the HO action computed from CGT with feedback matrix)
-                this->ComputeFeedbackForce(uh_real, u_cgt_h); // using u_ncgt_a as the ACS action for feedback
+                //this->ComputeFeedbackForce(uh_real, u_cgt_h); // using u_ncgt_a as the ACS action for feedback
             }
             else // Non-cooperative mode
             {
