@@ -30,6 +30,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->declare_parameter<bool>("override_ho_wrench", false);
     this->declare_parameter<double>("feedback_scaling_factor", 0.5); 
     this->declare_parameter<std::string>("algorithm", "dorigo"); // Options: "dorigo", "manual"
+    this->declare_parameter<double>("acs_action_filter_alpha", 0.1); // Low-pass filter parameter for ACS action
 
     // Get parameters
     this->ho_wrench_topic_ = this->get_parameter("ho_wrench_topic").as_string();
@@ -50,6 +51,7 @@ DifferentialGT::DifferentialGT(const std::string &node_name)
     this->override_ho_wrench_ = this->get_parameter("override_ho_wrench").as_bool();
     this->feedback_scaling_factor_ = this->get_parameter("feedback_scaling_factor").as_double();
     this->algorithm_ = this->get_parameter("algorithm").as_string();
+    this->acs_action_filter_alpha_ = this->get_parameter("acs_action_filter_alpha").as_double();
 
     // Initialize publishers
     this->wrench_from_acs_pub_ = this->create_publisher<geometry_msgs::msg::WrenchStamped>(this->acs_wrench_pub_topic_, 10);
@@ -508,12 +510,16 @@ void DifferentialGT::ComputeACSAction()
                 }
             }
 
-            // Create the WrenchStamped message to publish
+            // Apply low-pass filter to smooth ACS action
+            this->filtered_acs_action_ = this->acs_action_filter_alpha_ * acs_action + 
+                                         (1.0 - this->acs_action_filter_alpha_) * this->filtered_acs_action_;
+
+            // Create the WrenchStamped message to publish with filtered action
             this->wrench_from_acs_msg_.header.stamp = this->now();
             this->wrench_from_acs_msg_.header.frame_id = this->base_frame_;
-            this->wrench_from_acs_msg_.wrench.force.x = acs_action[0];
-            this->wrench_from_acs_msg_.wrench.force.y = acs_action[1];
-            this->wrench_from_acs_msg_.wrench.force.z = acs_action[2];
+            this->wrench_from_acs_msg_.wrench.force.x = this->filtered_acs_action_[0];
+            this->wrench_from_acs_msg_.wrench.force.y = this->filtered_acs_action_[1];
+            this->wrench_from_acs_msg_.wrench.force.z = this->filtered_acs_action_[2];
             this->wrench_from_acs_msg_.wrench.torque.x = 0.0;
             this->wrench_from_acs_msg_.wrench.torque.y = 0.0;
             this->wrench_from_acs_msg_.wrench.torque.z = 0.0;

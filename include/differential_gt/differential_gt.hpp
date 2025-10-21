@@ -182,5 +182,9 @@ private:
 
     // Messages to publish feedback force
     geometry_msgs::msg::WrenchStamped feedback_force_msg_;
+
+    // Low-pass filter for ACS action
+    double acs_action_filter_alpha_;
+    Eigen::Vector3d filtered_acs_action_;
 };
 #endif // DIFFERENTIAL_GT_HPP
