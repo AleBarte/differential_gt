@@ -641,7 +641,7 @@ void DifferentialGT::SetCostMatrices()
         // Load matrices from a file
         std::string package_share_dir = ament_index_cpp::get_package_share_directory("differential_gt");
         fs::path load_dir = fs::path(package_share_dir) / "saved_configs";
-        fs::path load_path = "/home/marco/UR5_ws/src/differential_gt/saved_configs/" + this->load_matrices_ + ".txt"; //! Change with path
+        fs::path load_path = "/home/alebarte/ros2_dorigo/src/differential_gt/saved_configs" + this->load_matrices_ + ".txt"; //! Change with path
         std::vector<Eigen::MatrixXd> matrices;
         matrices = Utils::loadMultipleMatrices(load_path.string());
         
