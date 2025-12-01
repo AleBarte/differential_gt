@@ -14,17 +14,21 @@ find_package(tf2_kdl REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
-include_directories(include)
-
 # Create the library
-add_library(gt_lib
+add_library(gt_lib SHARED
   src/cgt.cpp
   src/ncgt.cpp
   src/arbitration.cpp
 )
 
+# Specify include directories for the library
+target_include_directories(gt_lib PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>"
+)
+
 # Specify dependencies for the library
-ament_target_dependencies(gt_lib
+ament_target_dependencies(gt_lib PUBLIC
   rclcpp
   Eigen3
 )
@@ -56,24 +60,27 @@ ament_target_dependencies(differential_gt
   std_srvs
 )
 
+# Install include files - NOTE: include/${PROJECT_NAME}
+install(
+  DIRECTORY include/
+  DESTINATION include/${PROJECT_NAME}
+)
+
+# Install the library
+install(
+  TARGETS gt_lib
+  EXPORT export_${PROJECT_NAME}
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
 # Install the executables
 install(TARGETS
   differential_gt_node
   differential_gt
   DESTINATION lib/${PROJECT_NAME}
-)
-
-# Install the library
-install(TARGETS gt_lib
-  EXPORT export_${PROJECT_NAME}
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
-)
-
-# Install include files
-install(DIRECTORY include/
-  DESTINATION include
 )
 
 install(DIRECTORY
@@ -89,7 +96,6 @@ install(
 # Export the library
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(rclcpp Eigen3)
-ament_export_include_directories(include)
 
 # Package information
 ament_package()
