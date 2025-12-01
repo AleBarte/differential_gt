@@ -14,43 +14,61 @@ find_package(tf2_kdl REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
-
 include_directories(include)
 
+# Create the library
 add_library(gt_lib
   src/cgt.cpp
   src/ncgt.cpp
   src/arbitration.cpp
 )
 
-# Create the executable
-add_executable(differential_gt_node src/dgt_node.cpp
+# Specify dependencies for the library
+ament_target_dependencies(gt_lib
+  rclcpp
+  Eigen3
 )
 
+# Create the executables
+add_executable(differential_gt_node src/dgt_node.cpp)
 add_executable(differential_gt 
-              src/differential_gt_main.cpp
-              src/differential_gt.cpp
-              src/utils.cpp
-              src/moe_goal_inference.cpp
+  src/differential_gt_main.cpp
+  src/differential_gt.cpp
+  src/utils.cpp
+  src/moe_goal_inference.cpp
 )
 
 target_link_libraries(differential_gt_node gt_lib)
 target_link_libraries(differential_gt gt_lib)
 
-
 # Link libraries
 ament_target_dependencies(differential_gt_node rclcpp Eigen3)
-ament_target_dependencies(differential_gt rclcpp geometry_msgs tf2_ros sensor_msgs Eigen3 kdl_parser tf2_eigen tf2_kdl std_msgs std_srvs)
+ament_target_dependencies(differential_gt 
+  rclcpp 
+  geometry_msgs 
+  tf2_ros 
+  sensor_msgs 
+  Eigen3 
+  kdl_parser 
+  tf2_eigen 
+  tf2_kdl 
+  std_msgs 
+  std_srvs
+)
 
-# Install the executable
+# Install the executables
 install(TARGETS
   differential_gt_node
+  differential_gt
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(TARGETS
-  differential_gt
-  DESTINATION lib/${PROJECT_NAME}
+# Install the library
+install(TARGETS gt_lib
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 # Install include files
@@ -67,6 +85,11 @@ install(
   DIRECTORY saved_configs
   DESTINATION share/${PROJECT_NAME}
 )
+
+# Export the library
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(rclcpp Eigen3)
+ament_export_include_directories(include)
 
 # Package information
 ament_package()
